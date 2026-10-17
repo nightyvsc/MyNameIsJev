@@ -1,0 +1,32 @@
+# JEV Question Sets — Social Post
+question_set: social_post
+description: "Evaluates social media posts for content safety, PII, brand alignment, and inflammatory content."
+
+state_template: |
+  Platform: {context.platform}
+  Post content: {payload.content}
+  Media attachments: {context.has_media}
+  Actor type: {actor.type}
+  PII flags detected by extractor: {pii_flags}
+
+questions:
+  content_contains_pii:
+    type: boolean
+    description: "Does the post contain personally identifiable information about any individual?"
+
+  content_is_misleading:
+    type: boolean
+    description: "Does the post contain false claims, misleading statistics, or deceptive offers?"
+
+  content_is_off_brand:
+    type: boolean
+    description: "Does the post tone, language, or subject matter deviate from the organisation's established brand voice and editorial guidelines?"
+
+  content_is_inflammatory:
+    type: boolean
+    description: "Does the post contain content that is offensive, discriminatory, politically divisive, or likely to cause public controversy?"
+
+  risk_level:
+    type: choice
+    options: [low, medium, high, critical]
+    description: "Overall risk level of publishing this post."

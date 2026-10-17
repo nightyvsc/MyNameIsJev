@@ -1,0 +1,49 @@
+# JEV Question Sets — Repository Operations
+# Shared across: repo_merge, repo_ci_secrets, repo_add_dependency, repo_delete_files
+# (repo_push_main is always denied before reaching JEV)
+question_set: repo_operations
+description: "Evaluates git/repository operations for security vulnerabilities, secret leaks, breaking changes, and code quality."
+
+state_template: |
+  Operation: {tool}
+  Repository: {payload.repo}
+  Target branch: {diff_stats.target_branch}
+  Files changed: {diff_stats.files_changed} (+{diff_stats.lines_added} / -{diff_stats.lines_removed} lines)
+  Touches CI: {diff_stats.touches_ci}
+  Touches secrets files: {diff_stats.touches_secrets}
+  Adds dependency: {diff_stats.adds_dependency}
+  PR title: {context.pr_title}
+  Git diff (first 4000 chars):
+  {payload.diff[:4000]}
+
+questions:
+  introduces_security_vulnerability:
+    type: boolean
+    description: "Does this diff introduce a security vulnerability (e.g., SQL injection, XSS, insecure deserialization, hardcoded credentials, use of deprecated/vulnerable patterns)?"
+
+  contains_secret_leak:
+    type: boolean
+    description: "Does this diff contain or expose secrets, API keys, passwords, tokens, or private certificates?"
+
+  has_breaking_api_change:
+    type: boolean
+    description: "Does this diff introduce a breaking change to a public API, interface, or contract that downstream consumers depend on?"
+
+  adds_unreviewed_dependency:
+    type: boolean
+    description: "Does this diff add a new external dependency (package, library, or module) that has not been previously approved or reviewed?"
+
+  code_quality_tier:
+    type: choice
+    options: [clean, acceptable, refactor_required]
+    description: "Overall code quality assessment of the changes in this diff."
+
+  review_action:
+    type: choice
+    options: [approve, request_changes, flag_for_security_team]
+    description: "Recommended review action for this pull request based on the full diff analysis."
+
+  severity_score:
+    type: score
+    levels: [None, Low, Medium, High, Critical]
+    description: "Severity of the most critical issue found in this diff, if any."
