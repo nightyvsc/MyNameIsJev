@@ -65,12 +65,12 @@ Agent (real or stub)
                           │       • deny_immediately rules (before JEV)
                           │       • verdict resolution: deny > ask > allow
                           │
-                          ├─▶ 4. Audit Log (append-only)
+                          ├─▶ 4. SQLite audit log (local persistent volume on VM1)
                           │       • verdict, reasons, JEV answers
-                          │       • latency p50/p95, cost per decision
+                          │       • one writer; consistent backups copied to VM5
                           │
                           └─▶ 5. Human Approval Queue (ask only)
-                                  └─▶ Dashboard (VM2)
+                                  └─▶ Gateway HTTP API ──▶ Streamlit dashboard (VM2)
 ```
 
 **Verdict semantics:**
@@ -327,18 +327,43 @@ Each action class has a dedicated question set. All questions are batched into a
 
 ## Infrastructure
 
-8 VMs via SSH — all on the same LAN with internet access.
+6 private VMs administered via SSH. The addresses span multiple private subnets, so
+VM-to-VM routing and firewall paths must be validated rather than inferred from operator
+SSH access.
 
-| VM | Role | OS |
+| VM | Role | Why it has a separate VM |
 |----|------|----|
-| VM1 | Gateway + policy engine | Ubuntu |
-| VM2 | Dashboard + observability | Ubuntu |
-| VM3 | Simulated world (CRM, mail sink, social API, GitHub webhook relay) | Ubuntu |
-| VM4 | Simulated agents | Ubuntu / Rocky Linux |
-| VM5 | Audit DB (PostgreSQL in prod) | Rocky Linux |
-| VM6–VM8 | Reserved: scale / CI / dev | — |
+| VM1 (`10.43.99.216`, Ubuntu) | Gateway + policy engine + local SQLite | Keeps the decision path and authoritative audit store together; no network DB dependency in the critical path. |
+| VM2 (`10.43.100.175`, Ubuntu) | Streamlit dashboard | Separates operator UI from the gate; reads and approves only through the gateway API. |
+| VM3 (`10.43.99.199`, Ubuntu) | Simulated world: CRM, mail sink, social API, GitHub relay | Contains side effects and test integrations so they cannot bypass the gate or share the gateway process. |
+| VM4 (`10.43.99.206`, Ubuntu) | Simulated agents | Generates concurrent test actions independently, so load can be adjusted without changing the gateway. |
+| VM5 (`10.43.97.73`, Rocky Linux) | SQLite backup storage and recovery tests (not a live database) | Keeps recoverable copies off the gateway host; it is a backup target, not a database cluster node. |
+| VM6 (`10.43.97.69`, Rocky Linux) | Load tests / CI / optional host monitoring | Runs bursty operational jobs away from VM1; optional services depend on measured capacity. |
 
 Provisioning scripts: [`infra/`](infra/)
+
+The deployment sequence, exact port policy, per-host configuration, and Mermaid flow
+diagram are in [`infra/DEPLOYMENT_PLAN.md`](infra/DEPLOYMENT_PLAN.md). The ignored root
+`.env` is a local worksheet containing private IPs and empty secret slots; it must not
+be copied wholesale to all VMs.
+
+### Request flow
+
+1. An agent on VM4 or the GitHub relay on VM3 submits an `Action` to `POST /gate` on VM1.
+2. VM1 validates the action, extracts deterministic signals, calls JEV over HTTPS, and computes the policy verdict.
+3. VM1 writes the action, verdict, JEV response, and approval-queue state to its local persistent SQLite database. SQLite is single-writer here; it is not mounted over the network or opened by the dashboard.
+4. The gateway returns `allow`, `ask`, `deny`, or `pending`. An immediate `allow` permits the caller to continue to VM3; for `ask`, the caller must wait for approval and resume only after confirming the updated decision. `deny` and `pending` never execute the effect.
+5. The Streamlit dashboard on VM2 polls the gateway's HTTP audit/queue/metrics endpoints. Human approve/reject actions are sent back to VM1, which updates SQLite.
+6. VM1 creates a consistent SQLite backup and transfers it to VM5 over SSH/SFTP. VM5 is for recovery, not live reads/writes.
+7. VM6 can generate load or run CI on demand. Optional monitoring runs only after confirming the hosts have sufficient capacity.
+
+The distribution is justified by isolating failure domains and side effects, letting the agents/load tests vary independently from the gateway, and separating backups from the active audit store. It does **not** mean that one synchronous JEV decision is split among machines, and the current design does not provide automatic failover. A queue, gateway replicas, or Ray workers remain future options and require measured need; gateway active-active is incompatible with the current single-writer SQLite design.
+
+Persona B's simulated world, agents, Streamlit dashboard, backup utility, and support
+deployment scripts are separate from the gateway implementation. See
+[`world/agents/README.md`](world/agents/README.md),
+[`dashboard/README.md`](dashboard/README.md), and [`infra/README.md`](infra/README.md)
+for their runbooks. The support deployment scripts have not been run against the VMs.
 
 ---
 
@@ -370,6 +395,19 @@ curl -X POST http://localhost:8000/gate \
   -H "Content-Type: application/json" \
   -d @contracts/examples/decision_deny_mass_email.json
 ```
+
+### Real TypeSafe API smoke test
+
+For an intentional, one-request connectivity check against the provider, put
+`TYPESAFE_API_KEY` in the ignored root `.env` file and run:
+
+```bash
+python scripts/test_jev_api.py --confirm
+```
+
+The command sends synthetic data only, rejects non-official endpoints, does not retry,
+and may incur API usage charges. It has not been run without a locally configured key.
+See [`scripts/README.md`](scripts/README.md) for details.
 
 ---
 
@@ -411,6 +449,9 @@ To develop without a real JEV API key, the mock JEV server (task B7) can be run 
 ```bash
 python scripts/mock_jev_server.py --port 9000
 # Then set JEV_BASE_URL=http://localhost:9000 in .env
+
+# Verify the mock HTTP endpoint
+python -m unittest tests.unit.test_mock_jev_server
 ```
 
 ---

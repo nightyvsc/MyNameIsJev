@@ -1,0 +1,1 @@
+"""Fictional social publishing API."""

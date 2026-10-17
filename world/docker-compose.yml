@@ -1,0 +1,88 @@
+services:
+  crm:
+    build:
+      context: ..
+      dockerfile: world/crm/Dockerfile
+    ports:
+      - "${VM3_BIND_IP:-127.0.0.1}:${CRM_PORT:-3001}:3001"
+    volumes:
+      - crm_data:/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3001/health', timeout=2)"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  mail-sink:
+    build:
+      context: ..
+      dockerfile: world/mail/Dockerfile
+    ports:
+      - "${VM3_BIND_IP:-127.0.0.1}:${MAIL_REST_PORT:-3002}:3002"
+      - "${VM3_BIND_IP:-127.0.0.1}:${MAIL_SMTP_PORT:-2525}:2525"
+    volumes:
+      - mail_data:/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3002/health', timeout=2)"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  social:
+    build:
+      context: ..
+      dockerfile: world/social/Dockerfile
+    ports:
+      - "${VM3_BIND_IP:-127.0.0.1}:${SOCIAL_PORT:-3003}:3003"
+    volumes:
+      - social_data:/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3003/health', timeout=2)"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  github-relay:
+    build:
+      context: ..
+      dockerfile: world/github_relay/Dockerfile
+    ports:
+      - "${VM3_BIND_IP:-127.0.0.1}:${GITHUB_RELAY_PORT:-3004}:3004"
+    environment:
+      GATEWAY_BASE_URL: "${GATEWAY_BASE_URL:-http://127.0.0.1:8000}"
+      GATE_TOKEN: "${GATE_TOKEN:-}"
+      GITHUB_TOKEN: "${GITHUB_TOKEN:-}"
+      GITHUB_WEBHOOK_SECRET: "${GITHUB_WEBHOOK_SECRET:-}"
+      GITHUB_ALLOWED_REPOSITORIES: "${GITHUB_ALLOWED_REPOSITORIES:-}"
+      GITHUB_ENABLE_WRITES: "${GITHUB_ENABLE_WRITES:-false}"
+      GITHUB_API_URL: "${GITHUB_API_URL:-https://api.github.com}"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3004/health', timeout=2)"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  crm_data:
+  mail_data:
+  social_data:

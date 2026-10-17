@@ -16,11 +16,74 @@ build/
 venv/
 env/
 ENV/
+virtualenv/
+venv*/
+.python-version
 
 # Environment variables
 .env
 .env.*
 !.env.example
+.envrc
+
+# Credentials, private keys, certificates, and local machine configuration
+.ssh/
+.secrets/
+.netrc
+.npmrc
+.pypirc
+password
+password.*
+passwords
+passwords.*
+secret
+secret.*
+credentials
+credentials.*
+credentials_*/
+secrets/
+secrets.*
+token
+token.*
+*password*
+*credential*
+*secret*
+*token*.txt
+*_credentials
+*_credentials.*
+*_password
+*_password.*
+*_token
+*_token.*
+*_secret
+*_secret.*
+*_secrets
+*_secrets.*
+id_rsa
+id_ed25519
+id_ecdsa
+id_dsa
+*.pem
+*.key
+*.p12
+*.pfx
+*.p8
+*.jks
+*.keystore
+*.crt
+*.cer
+*.der
+*.p7b
+*.kubeconfig
+*.tfstate
+*.tfstate.*
+.aws/
+.azure/
+.config/gcloud/
+
+# Local deployment inventory may contain private IPs and SSH configuration
+infra/inventory.yaml
+infra/ssh_config
 
 # IDE
 .idea/
@@ -46,6 +109,19 @@ htmlcov/
 *.log
 logs/
 
+# Local plans and agent-only prompts/instructions
+implementation_plan.md
+*_plan.md
+plan_*.md
+agent_*prompt*.md
+*_prompt.md
+AGENTS.md
+/agents/
+prompts/
+.agents/
+.claude/
+.copilot/
+
 # Docs build
 docs/_build/
 
@@ -53,3 +129,9 @@ docs/_build/
 dashboard/node_modules/
 dashboard/dist/
 dashboard/.next/
+
+# Node and package-manager local state
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
