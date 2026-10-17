@@ -1,0 +1,13 @@
+{
+  "schema_version": "2.0",
+  "action_id": "ea5e8c18-2250-4920-a110-a857a0ad38aa",
+  "action_class": "crm_write",
+  "tool": "update_crm",
+  "actor": "agent-ops-01",
+  "args": { "record_count": 2, "field": "status" },
+  "recipients": ["contact-001", "contact-002"],
+  "payload": { "field": "status", "new_value": "active" },
+  "risk_level": "low",
+  "dry_run": true,
+  "created_at": "2026-10-17T15:00:00Z"
+}

@@ -1,0 +1,440 @@
+openapi: "3.1.0"
+info:
+  title: MyNameIsJev — Safety Gate API
+  version: "0.1.0"
+  description: |
+    The Safety Gate intercepts agent tool calls, evaluates them with JEV (TypeSafe),
+    and returns a verdict: **allow**, **ask**, **deny**, or **pending**.
+
+    Actions requiring human approval are enqueued; the `/gate/{id}/approve` endpoint
+    lets an operator act on them via the dashboard or any HTTP client.
+
+    All requests require the `X-Gate-Token` header (internal bearer token, NOT the JEV key).
+  contact:
+    name: HashBit / 30X Team
+  license:
+    name: MIT
+
+servers:
+  - url: http://vm1.local:8000
+    description: VM1 — Development gateway
+
+tags:
+  - name: gate
+    description: Core interception and verdict endpoints
+  - name: approval
+    description: Human approval queue management
+  - name: audit
+    description: Audit log and metrics
+
+paths:
+  /gate:
+    post:
+      operationId: evaluateAction
+      summary: Evaluate an intercepted action
+      description: |
+        Submit a normalized `Action` object. The gate runs the deterministic extractor,
+        calls JEV, applies the policy engine, and returns a `Decision`.
+
+        - **allow**: action may proceed immediately.
+        - **deny**: action is blocked; execution MUST NOT proceed.
+        - **ask**: action is enqueued; caller MUST wait for human approval before proceeding.
+        - **pending**: JEV was unreachable; action is held until TTL expires or JEV recovers.
+      tags: [gate]
+      security:
+        - GateToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Action"
+            examples:
+              mass_email_high_risk:
+                $ref: "#/components/examples/MassEmailHighRisk"
+              pr_merge_clean:
+                $ref: "#/components/examples/PRMergeClean"
+      responses:
+        "200":
+          description: Decision issued successfully.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Decision"
+        "400":
+          description: Invalid Action payload (schema validation failed).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid gate token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: JEV API unreachable and all retries exhausted. Returns a Decision with verdict=pending.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Decision"
+
+  /gate/{decision_id}:
+    get:
+      operationId: getDecision
+      summary: Retrieve a decision by ID
+      tags: [gate]
+      security:
+        - GateToken: []
+      parameters:
+        - $ref: "#/components/parameters/DecisionId"
+      responses:
+        "200":
+          description: Decision found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Decision"
+        "404":
+          description: Decision not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /gate/{decision_id}/approve:
+    post:
+      operationId: approveAction
+      summary: Human approval or rejection for an 'ask' verdict
+      description: |
+        Acts on a decision in the human approval queue.
+        Only valid for decisions with `verdict = "ask"`.
+        Sets `human_approval` on the decision and updates the verdict to `allow` or `deny`.
+      tags: [approval]
+      security:
+        - GateToken: []
+      parameters:
+        - $ref: "#/components/parameters/DecisionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalRequest"
+      responses:
+        "200":
+          description: Approval recorded. Returns the updated Decision.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Decision"
+        "400":
+          description: Decision is not in 'ask' state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Decision not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /queue:
+    get:
+      operationId: listPendingApprovals
+      summary: List all decisions awaiting human approval
+      tags: [approval]
+      security:
+        - GateToken: []
+      parameters:
+        - name: action_class
+          in: query
+          schema:
+            type: string
+          description: Filter by action class.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 200
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: List of decisions awaiting approval.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Decision"
+
+  /audit/log:
+    get:
+      operationId: getAuditLog
+      summary: Query the append-only audit log
+      tags: [audit]
+      security:
+        - GateToken: []
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Start timestamp (ISO 8601).
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: End timestamp (ISO 8601).
+        - name: verdict
+          in: query
+          schema:
+            type: string
+            enum: [allow, ask, deny, pending]
+        - name: action_class
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Audit log entries.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total:
+                    type: integer
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Decision"
+
+  /audit/metrics:
+    get:
+      operationId: getMetrics
+      summary: Aggregated gate metrics
+      description: Returns p50/p95 latency, cost per decision, false positive rate, and block rate over a time window.
+      tags: [audit]
+      security:
+        - GateToken: []
+      parameters:
+        - name: window
+          in: query
+          schema:
+            type: string
+            enum: [1h, 6h, 24h, 7d]
+            default: 24h
+      responses:
+        "200":
+          description: Aggregated metrics.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Metrics"
+
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Gateway health check
+      description: Returns 200 if the gateway is running and can reach the JEV API.
+      tags: [gate]
+      responses:
+        "200":
+          description: Healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+                  jev_reachable:
+                    type: boolean
+                  version:
+                    type: string
+
+components:
+  securitySchemes:
+    GateToken:
+      type: http
+      scheme: bearer
+      description: Internal bearer token for gateway access. Set via GATE_TOKEN env var.
+
+  parameters:
+    DecisionId:
+      name: decision_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: UUID of the decision.
+
+  schemas:
+    Action:
+      $ref: "./schemas/action.schema.json"
+
+    Decision:
+      $ref: "./schemas/decision.schema.json"
+
+    ApprovalRequest:
+      type: object
+      required: [approver_id, approved]
+      additionalProperties: false
+      properties:
+        approver_id:
+          type: string
+          description: ID of the human approver.
+        approved:
+          type: boolean
+          description: True to allow, false to deny the action.
+        note:
+          type: string
+          description: Optional comment from the approver.
+
+    Metrics:
+      type: object
+      additionalProperties: false
+      properties:
+        window:
+          type: string
+        total_decisions:
+          type: integer
+        verdicts:
+          type: object
+          properties:
+            allow: { type: integer }
+            ask: { type: integer }
+            deny: { type: integer }
+            pending: { type: integer }
+        latency_ms:
+          type: object
+          properties:
+            p50: { type: number }
+            p95: { type: number }
+            p99: { type: number }
+        cost_usd:
+          type: object
+          properties:
+            total: { type: number }
+            mean_per_decision: { type: number }
+        false_positive_rate:
+          type: number
+          description: Ratio of allow verdicts that were later overridden by human to deny (estimated).
+        block_rate:
+          type: number
+          description: Ratio of deny decisions over total.
+
+    Error:
+      type: object
+      required: [error, message]
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+          description: Machine-readable error code.
+        message:
+          type: string
+          description: Human-readable error message.
+        details:
+          type: object
+          additionalProperties: true
+
+  examples:
+    MassEmailHighRisk:
+      summary: Mass email to 500 recipients (expect deny or ask)
+      value:
+        id: "a1b2c3d4-0000-4000-8000-000000000001"
+        timestamp: "2026-10-17T17:00:00Z"
+        actor:
+          id: "agent-sales-001"
+          type: "agent"
+          name: "Sales Automation Agent"
+        tool: "send_email"
+        action_class: "mass_communication"
+        risk_level_base: "high"
+        is_dry_run: false
+        recipients:
+          total_count: 500
+          internal_count: 50
+          external_count: 450
+          includes_high_risk_roles: false
+        pii_flags:
+          contains_email: true
+          contains_phone: false
+          contains_national_id: false
+          contains_credit_card: false
+          contains_iban: false
+          pii_fields: ["to", "body"]
+        payload:
+          subject: "Q4 Promotion — Act Now"
+          body: "Dear customer, this is your exclusive offer..."
+          to: ["customer1@example.com", "..."]
+        context:
+          campaign_id: "q4-promo-2026"
+
+    PRMergeClean:
+      summary: PR merge to main with no sensitive changes (expect allow)
+      value:
+        id: "a1b2c3d4-0000-4000-8000-000000000002"
+        timestamp: "2026-10-17T17:05:00Z"
+        actor:
+          id: "agent-devops-001"
+          type: "agent"
+          name: "DevOps Automation Agent"
+        tool: "merge_pull_request"
+        action_class: "repo_merge"
+        risk_level_base: "medium"
+        is_dry_run: false
+        diff_stats:
+          files_changed: 3
+          lines_added: 42
+          lines_removed: 10
+          touches_ci: false
+          touches_secrets: false
+          adds_dependency: false
+          target_branch: "main"
+        pii_flags:
+          contains_email: false
+          contains_phone: false
+          contains_national_id: false
+          contains_credit_card: false
+          contains_iban: false
+          pii_fields: []
+        payload:
+          repo: "myorg/my-service"
+          pr_number: 128
+          title: "feat: add retry logic to payment client"
+          base_branch: "main"
+          head_branch: "feat/payment-retry"
+        context:
+          pr_url: "https://github.com/myorg/my-service/pull/128"

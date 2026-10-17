@@ -1,0 +1,73 @@
+{
+  "_comment": "Example of an ASK decision — PR merge touching CI pipeline",
+  "id": "d2000000-0000-4000-8000-000000000002",
+  "action_id": "a1b2c3d4-0000-4000-8000-000000000003",
+  "timestamp": "2026-10-17T17:10:05.112Z",
+  "verdict": "ask",
+  "policy_reasons": [
+    {
+      "code": "TOUCHES_CI_PIPELINE",
+      "description": "The diff modifies CI configuration files. All CI changes require human review.",
+      "source": "deterministic",
+      "severity": "warn"
+    },
+    {
+      "code": "BREAKING_API_CHANGE",
+      "description": "JEV detected a likely breaking API change (probability 0.73).",
+      "source": "jev",
+      "severity": "warn",
+      "probability": 0.73
+    }
+  ],
+  "jev_response": {
+    "model": "jev-1.14",
+    "call_id": "jev-call-def456",
+    "raw_answers": {
+      "introduces_security_vulnerability": {
+        "value": false,
+        "probability": 0.88
+      },
+      "contains_secret_leak": {
+        "value": false,
+        "probability": 0.95
+      },
+      "has_breaking_api_change": {
+        "value": true,
+        "probability": 0.73
+      },
+      "adds_unreviewed_dependency": {
+        "value": false,
+        "probability": 0.91
+      },
+      "code_quality_tier": {
+        "value": "acceptable",
+        "probabilities": {
+          "clean": 0.31,
+          "acceptable": 0.58,
+          "refactor_required": 0.11
+        }
+      },
+      "review_action": {
+        "value": "request_changes",
+        "probabilities": {
+          "approve": 0.18,
+          "request_changes": 0.71,
+          "flag_for_security_team": 0.11
+        }
+      },
+      "severity_score": {
+        "value": 2.1,
+        "level": "Medium",
+        "probability": 0.64
+      }
+    }
+  },
+  "latency_ms": {
+    "total_ms": 288.7,
+    "extractor_ms": 6.2,
+    "jev_ms": 275.3,
+    "policy_ms": 7.2
+  },
+  "cost_usd": 0.00061,
+  "ttl_expires_at": "2026-10-17T17:15:05.112Z"
+}

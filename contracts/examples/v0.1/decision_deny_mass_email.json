@@ -1,0 +1,67 @@
+{
+  "_comment": "Example of a DENY decision — mass email to 500 recipients with misleading content",
+  "id": "d1000000-0000-4000-8000-000000000001",
+  "action_id": "a1b2c3d4-0000-4000-8000-000000000001",
+  "timestamp": "2026-10-17T17:00:01.823Z",
+  "verdict": "deny",
+  "policy_reasons": [
+    {
+      "code": "RECIPIENT_COUNT_EXCEEDED",
+      "description": "500 recipients exceeds the medium-risk threshold of 249 for mass_communication.",
+      "source": "deterministic",
+      "severity": "warn"
+    },
+    {
+      "code": "CONTENT_MISLEADING",
+      "description": "JEV assessed the message body as likely misleading (probability 0.87).",
+      "source": "jev",
+      "severity": "block",
+      "probability": 0.87
+    },
+    {
+      "code": "PII_DETECTED",
+      "description": "JEV detected PII in message content (probability 0.91).",
+      "source": "jev",
+      "severity": "block",
+      "probability": 0.91
+    }
+  ],
+  "jev_response": {
+    "model": "jev-1.14",
+    "call_id": "jev-call-abc123",
+    "raw_answers": {
+      "action_is_irreversible": {
+        "value": true,
+        "probability": 0.99
+      },
+      "content_contains_pii": {
+        "value": true,
+        "probability": 0.91
+      },
+      "content_is_misleading": {
+        "value": true,
+        "probability": 0.87
+      },
+      "content_is_off_brand": {
+        "value": false,
+        "probability": 0.72
+      },
+      "risk_level": {
+        "value": "critical",
+        "probabilities": {
+          "low": 0.01,
+          "medium": 0.04,
+          "high": 0.22,
+          "critical": 0.73
+        }
+      }
+    }
+  },
+  "latency_ms": {
+    "total_ms": 312.4,
+    "extractor_ms": 4.1,
+    "jev_ms": 301.8,
+    "policy_ms": 6.5
+  },
+  "cost_usd": 0.00042
+}

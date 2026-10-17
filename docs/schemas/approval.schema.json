@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "approval.schema.json",
+  "title": "Approval",
+  "description": "Resolución humana de una acción que recibió veredicto ask.",
+  "type": "object",
+  "required": ["schema_version", "action_id", "status"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "2.0" },
+    "action_id": { "type": "string", "format": "uuid" },
+    "status": { "enum": ["pending", "approved", "rejected"] },
+    "resolved_by": { "type": "string", "minLength": 1 },
+    "resolved_at": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "pending" } }, "required": ["status"] },
+      "then": { "not": { "anyOf": [{ "required": ["resolved_by"] }, { "required": ["resolved_at"] }] } },
+      "else": { "required": ["resolved_by", "resolved_at"] }
+    }
+  ]
+}

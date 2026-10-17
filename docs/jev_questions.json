@@ -1,0 +1,36 @@
+{
+  "schema_version": "2.0",
+  "question_types": ["boolean", "choice", "score"],
+  "classes": {
+    "email_bulk": [
+      { "id": "action_is_irreversible", "type": "boolean", "text": "¿Esta acción de envío no puede deshacerse una vez ejecutada?" },
+      { "id": "content_contains_pii", "type": "boolean", "text": "¿El contenido expone datos personales?" },
+      { "id": "content_is_misleading", "type": "boolean", "text": "¿El mensaje contiene afirmaciones engañosas?" },
+      { "id": "content_is_off_brand", "type": "boolean", "text": "¿El mensaje contradice la voz o política de la organización?" },
+      { "id": "risk_level", "type": "choice", "text": "¿Qué nivel de riesgo semántico presenta el contenido?", "options": ["low", "medium", "high", "critical", "other"] }
+    ],
+    "crm_write": [
+      { "id": "action_is_irreversible", "type": "boolean", "text": "¿Esta escritura del CRM es irreversible o difícil de revertir?" },
+      { "id": "content_contains_pii", "type": "boolean", "text": "¿El contenido expone datos personales?" },
+      { "id": "content_is_misleading", "type": "boolean", "text": "¿La modificación contiene información engañosa?" },
+      { "id": "content_is_off_brand", "type": "boolean", "text": "¿La modificación contradice la política de la organización?" },
+      { "id": "risk_level", "type": "choice", "text": "¿Qué nivel de riesgo semántico presenta la modificación?", "options": ["low", "medium", "high", "critical", "other"] }
+    ],
+    "social_post": [
+      { "id": "content_contains_pii", "type": "boolean", "text": "¿La publicación expone datos personales?" },
+      { "id": "content_is_misleading", "type": "boolean", "text": "¿La publicación contiene afirmaciones engañosas?" },
+      { "id": "content_is_off_brand", "type": "boolean", "text": "¿La publicación contradice la voz o política de la organización?" },
+      { "id": "content_is_inflammatory", "type": "boolean", "text": "¿La publicación puede incitar hostilidad o daño?" },
+      { "id": "risk_level", "type": "choice", "text": "¿Qué nivel de riesgo semántico presenta la publicación?", "options": ["low", "medium", "high", "critical", "other"] }
+    ],
+    "pr_action": [
+      { "id": "introduces_security_vulnerability", "type": "boolean", "text": "¿El cambio introduce una vulnerabilidad de seguridad?" },
+      { "id": "contains_secret_leak", "type": "boolean", "text": "¿El cambio expone secretos o credenciales?" },
+      { "id": "has_breaking_api_change", "type": "boolean", "text": "¿El cambio rompe compatibilidad de una API?" },
+      { "id": "adds_unreviewed_dependency", "type": "boolean", "text": "¿El cambio agrega una dependencia sin revisión suficiente?" },
+      { "id": "code_quality_tier", "type": "choice", "text": "¿Cuál describe mejor la calidad del cambio?", "options": ["clean", "acceptable", "refactor_required", "other"] },
+      { "id": "review_action", "type": "choice", "text": "¿Qué acción de revisión corresponde al diff?", "options": ["approve", "request_changes", "flag_for_security_team", "other"] },
+      { "id": "severity_score", "type": "score", "text": "¿Qué severidad tiene el riesgo del cambio?", "levels": ["None", "Low", "Medium", "High", "Critical"] }
+    ]
+  }
+}

@@ -1,3 +1,6 @@
+# AVISO: este archivo conserva la propuesta original v0.1. Sus valores no los
+# carga el runtime v2.0; el espejo actual está en config/thresholds.v2.yaml y
+# la fuente que sí consume el gateway es docs/policy.defaults.json.
 # Action Classes, Risk Levels & Thresholds
 # Version: 0.1.0
 # These are runtime-configurable parameters. No redeployment needed to change them.
@@ -180,3 +183,14 @@ high_risk_roles:
   - "hr_director"
   - "legal"
   - "board"
+
+# ---------------------------------------------------------------------------
+# IMPLEMENTACIÓN ACTUAL v2.0
+# ---------------------------------------------------------------------------
+# El runtime de Persona A carga la política v2 desde docs/policy.defaults.json.
+# El espejo legible completo de esa política está en config/thresholds.v2.yaml.
+# Las reglas históricas de arriba se conservan sin borrarlas y no se consumen
+# por el gateway v2.0.
+contract_v2:
+  mirror: config/thresholds.v2.yaml
+  canonical_runtime_config: docs/policy.defaults.json

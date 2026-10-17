@@ -1,3 +1,4 @@
+# Archivo original v0.1 conservado. El runtime v2.0 carga docs/jev_questions.json.
 # JEV Question Sets — Repository Operations
 # Shared across: repo_merge, repo_ci_secrets, repo_add_dependency, repo_delete_files
 # (repo_push_main is always denied before reaching JEV)

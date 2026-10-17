@@ -1,0 +1,65 @@
+{
+  "_comment": "Example of an ALLOW decision — clean PR merge with no risk signals",
+  "id": "d3000000-0000-4000-8000-000000000003",
+  "action_id": "a1b2c3d4-0000-4000-8000-000000000002",
+  "timestamp": "2026-10-17T17:05:01.044Z",
+  "verdict": "allow",
+  "policy_reasons": [
+    {
+      "code": "ALL_CHECKS_PASSED",
+      "description": "No deterministic or JEV signals exceeded configured thresholds.",
+      "source": "deterministic",
+      "severity": "info"
+    }
+  ],
+  "jev_response": {
+    "model": "jev-1.14",
+    "call_id": "jev-call-ghi789",
+    "raw_answers": {
+      "introduces_security_vulnerability": {
+        "value": false,
+        "probability": 0.97
+      },
+      "contains_secret_leak": {
+        "value": false,
+        "probability": 0.99
+      },
+      "has_breaking_api_change": {
+        "value": false,
+        "probability": 0.89
+      },
+      "adds_unreviewed_dependency": {
+        "value": false,
+        "probability": 0.94
+      },
+      "code_quality_tier": {
+        "value": "clean",
+        "probabilities": {
+          "clean": 0.78,
+          "acceptable": 0.20,
+          "refactor_required": 0.02
+        }
+      },
+      "review_action": {
+        "value": "approve",
+        "probabilities": {
+          "approve": 0.91,
+          "request_changes": 0.07,
+          "flag_for_security_team": 0.02
+        }
+      },
+      "severity_score": {
+        "value": 0.1,
+        "level": "None",
+        "probability": 0.96
+      }
+    }
+  },
+  "latency_ms": {
+    "total_ms": 156.2,
+    "extractor_ms": 3.8,
+    "jev_ms": 147.1,
+    "policy_ms": 5.3
+  },
+  "cost_usd": 0.00038
+}

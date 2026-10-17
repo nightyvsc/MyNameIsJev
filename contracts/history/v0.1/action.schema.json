@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mynameisjew.dev/schemas/action.schema.json",
+  "title": "Action",
+  "description": "Represents a normalized tool call intercepted before execution. Every agent action MUST be converted to this schema before entering the gate.",
+  "type": "object",
+  "required": [
+    "id",
+    "timestamp",
+    "actor",
+    "tool",
+    "action_class",
+    "risk_level_base",
+    "payload",
+    "is_dry_run"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for this action instance (UUIDv4)."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp of when the action was intercepted."
+    },
+    "actor": {
+      "$ref": "#/$defs/Actor"
+    },
+    "tool": {
+      "type": "string",
+      "description": "The name of the tool or function being called (e.g. 'send_email', 'merge_pull_request').",
+      "examples": [
+        "send_email",
+        "upsert_crm_records",
+        "post_social",
+        "merge_pull_request",
+        "push_to_main",
+        "modify_ci_pipeline",
+        "add_dependency",
+        "delete_files"
+      ]
+    },
+    "action_class": {
+      "type": "string",
+      "enum": [
+        "mass_communication",
+        "crm_write",
+        "social_post",
+        "repo_merge",
+        "repo_push_main",
+        "repo_ci_secrets",
+        "repo_add_dependency",
+        "repo_delete_files"
+      ],
+      "description": "High-level class of the action. Determines which JEV question set and threshold table to apply."
+    },
+    "risk_level_base": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "critical"],
+      "description": "Risk level assigned by the deterministic extractor, before JEV evaluation. JEV may upgrade this."
+    },
+    "is_dry_run": {
+      "type": "boolean",
+      "description": "If true, the action will not be executed regardless of the gate verdict. Used for testing."
+    },
+    "recipients": {
+      "$ref": "#/$defs/Recipients"
+    },
+    "diff_stats": {
+      "$ref": "#/$defs/DiffStats"
+    },
+    "pii_flags": {
+      "$ref": "#/$defs/PIIFlags"
+    },
+    "payload": {
+      "type": "object",
+      "description": "Raw arguments of the original tool call. Structure varies by tool. Must be serializable to JSON.",
+      "additionalProperties": true
+    },
+    "context": {
+      "type": "object",
+      "description": "Optional metadata to enrich the JEV evaluation (e.g., PR title, email subject, CRM entity type).",
+      "additionalProperties": true
+    }
+  },
+  "$defs": {
+    "Actor": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "description": "The agent or user that initiated the tool call.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier of the actor (agent ID, user ID, service account)."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["agent", "human", "service"],
+          "description": "Whether the actor is an AI agent, a human user, or an automated service."
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable name of the actor."
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true,
+          "description": "Additional actor metadata (team, role, session ID, etc.)."
+        }
+      }
+    },
+    "Recipients": {
+      "type": "object",
+      "description": "Deterministically computed recipient counts. Only populated for mass_communication and crm_write classes.",
+      "additionalProperties": false,
+      "properties": {
+        "total_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of unique recipients / records affected."
+        },
+        "internal_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Subset of recipients that are internal (same org domain)."
+        },
+        "external_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Subset of recipients that are external."
+        },
+        "includes_high_risk_roles": {
+          "type": "boolean",
+          "description": "True if any recipient holds a high-risk role (C-Suite, Finance, HR, Security)."
+        }
+      }
+    },
+    "DiffStats": {
+      "type": "object",
+      "description": "Statistics extracted from the git diff. Only populated for repo_* action classes.",
+      "additionalProperties": false,
+      "properties": {
+        "files_changed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lines_added": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lines_removed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "touches_ci": {
+          "type": "boolean",
+          "description": "True if any changed file is part of CI configuration (.github/, .gitlab-ci.yml, Jenkinsfile, etc.)."
+        },
+        "touches_secrets": {
+          "type": "boolean",
+          "description": "True if any changed file is a secrets file (.env, *.pem, *.key, secrets.yaml, etc.)."
+        },
+        "adds_dependency": {
+          "type": "boolean",
+          "description": "True if any package manifest was modified to add a new dependency."
+        },
+        "target_branch": {
+          "type": "string",
+          "description": "Target branch of the operation (e.g., 'main', 'prod')."
+        }
+      }
+    },
+    "PIIFlags": {
+      "type": "object",
+      "description": "Output of the regex-based PII detector run on the payload before calling JEV.",
+      "additionalProperties": false,
+      "properties": {
+        "contains_email": { "type": "boolean" },
+        "contains_phone": { "type": "boolean" },
+        "contains_national_id": { "type": "boolean" },
+        "contains_credit_card": { "type": "boolean" },
+        "contains_iban": { "type": "boolean" },
+        "pii_fields": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of field names where PII was detected."
+        }
+      }
+    }
+  }
+}

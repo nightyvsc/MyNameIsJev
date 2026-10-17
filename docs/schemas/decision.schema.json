@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "decision.schema.json",
+  "title": "Decision",
+  "description": "Resultado del gate. Conserva el veredicto, señales deterministas, respuestas tipadas de JEV, latencia, costo estimado y timestamp para auditoría.",
+  "type": "object",
+  "required": ["schema_version", "action_id", "status", "reasons", "features", "jev_answers", "source", "latency_ms", "cost_usd", "decided_at"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": "2.0", "description": "Versión mayor del contrato compartido." },
+    "action_id": { "type": "string", "format": "uuid", "description": "Identificador de la Action evaluada." },
+    "status": { "enum": ["pending", "decided", "expired"], "description": "Estado del procesamiento. pending y expired son estados, no veredictos." },
+    "verdict": { "enum": ["allow", "ask", "deny"], "description": "Resultado de política; se omite mientras status no sea decided." },
+    "reasons": { "type": "array", "items": { "type": "string" }, "description": "Códigos cortos y ordenados que explican las señales que determinaron la política." },
+    "features": { "type": "object", "description": "Hechos calculados determinísticamente: recipient_count, records_count, PII por regex, changed_files, diff_lines, flags de CI/secretos y riesgo calculado. Se amplía según los extractores." },
+    "jev_answers": {
+      "type": "object",
+      "description": "Mapa question_id -> respuesta tipada con probabilidades por etiqueta; conserva el resultado estructurado recibido del adaptador JEV/mock.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["type", "probs"],
+        "additionalProperties": false,
+        "properties": {
+          "type": { "enum": ["boolean", "choice", "score"], "description": "Tipo de pregunta definido en la configuración por clase." },
+          "probs": { "type": "object", "minProperties": 1, "description": "Distribución de probabilidad asociada a las etiquetas posibles.", "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 } }
+        }
+      }
+    },
+    "source": { "enum": ["jev", "mock"], "description": "Implementación del DecisionModel que produjo el resultado." },
+    "latency_ms": { "type": "number", "minimum": 0, "description": "Latencia total informada por el modelo para esta evaluación, en milisegundos." },
+    "cost_usd": { "type": "number", "minimum": 0, "description": "Costo de entrada estimado para esta decisión; el mock reporta cero." },
+    "decided_at": { "type": "string", "format": "date-time", "description": "Marca temporal ISO 8601 de creación o actualización de la decisión." }
+  },
+  "allOf": [
+    { "if": { "properties": { "status": { "const": "decided" } }, "required": ["status"] }, "then": { "required": ["verdict"] }, "else": { "not": { "required": ["verdict"] } } }
+  ]
+}

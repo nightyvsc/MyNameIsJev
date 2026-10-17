@@ -1,0 +1,34 @@
+{
+  "schema_version": "2.0",
+  "dry_run_verdict": "allow",
+  "email_bulk": { "recipient_count": { "low_lt": 10, "medium_max": 250, "high_gt": 250 } },
+  "crm_write": { "record_count": { "low_lt": 10, "medium_max": 500, "high_gt": 500 } },
+  "social_post": { "always": "ask" },
+  "pr_action": {
+    "merge": { "default": "ask", "deny_changed_files_gt": 50 },
+    "push_main": { "always": "deny" },
+    "touch_ci": { "always": "ask" },
+    "touch_secrets": { "always": "ask" },
+    "add_dependency": { "decision_by": "cve_score", "cve_threshold": null },
+    "delete_files": { "ask_changed_files_lt": 5, "deny_changed_files_gt": 5, "five_files": "ask" },
+    "approve": { "default": "ask" }
+  },
+  "jev_confidence": {
+    "irreversible": { "ask_at": 0.5, "deny_at": 0.8 },
+    "reversible": { "ask_at": 0.6, "deny_at": 0.85 },
+    "email_bulk": { "content_contains_pii": { "ask_at": 0.6, "deny_at": 0.85 }, "content_is_misleading": { "deny_at": 0.7 }, "content_is_off_brand": { "ask_at": 0.65 }, "critical_risk": { "deny_at": 0.8 } },
+    "crm_write": { "content_contains_pii": { "ask_at": 0.65, "deny_at": 0.9 }, "content_is_misleading": { "deny_at": 0.75 }, "critical_risk": { "deny_at": 0.8 } },
+    "social_post": { "content_contains_pii": { "deny_at": 0.8 }, "content_is_misleading": { "deny_at": 0.7 }, "content_is_off_brand": { "ask_at": 0.6 }, "content_is_inflammatory": { "deny_at": 0.75 }, "critical_risk": { "deny_at": 0.8 } },
+    "pr_action": { "contains_secret_leak": { "deny_at": 0.75 }, "introduces_security_vulnerability": { "deny_at": 0.75 }, "has_breaking_api_change": { "ask_at": 0.65 }, "adds_unreviewed_dependency": { "ask_at": 0.6 }, "critical_risk": { "deny_at": 0.8 }, "flag_for_security_team": { "deny_at": 0.65 }, "request_changes": { "ask_at": 0.7 } }
+  },
+  "jev": {
+    "timeout_ms": 500,
+    "retry_count": 2,
+    "retry_backoff": "exponential",
+    "retry_base_delay_ms": 100,
+    "input_cost_usd_per_million": 0.042,
+    "failure_mode": "do_nothing",
+    "pending_ttl_seconds": 300
+  },
+  "approval_ttl_seconds": 3600
+}
