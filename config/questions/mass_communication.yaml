@@ -1,0 +1,38 @@
+# Archivo original v0.1 conservado. El runtime v2.0 carga docs/jev_questions.json.
+# Mantener este borrador para referencia; sus nombres de clase se migraron en v2.
+# JEV Question Sets — Mass Communication (email, bulk CRM read)
+# Each key is a JEV question name. All questions are batched in a single API call.
+# "state" is built by the gateway from the Action payload before calling JEV.
+
+question_set: mass_communication
+description: "Evaluates outbound mass communication actions for content safety, PII, and brand alignment."
+
+state_template: |
+  Action type: {tool}
+  Recipient count: {recipients.total_count} (internal: {recipients.internal_count}, external: {recipients.external_count})
+  Subject: {payload.subject}
+  Body excerpt (first 2000 chars): {payload.body[:2000]}
+  Sender actor type: {actor.type}
+  PII flags detected by extractor: {pii_flags}
+
+questions:
+  action_is_irreversible:
+    type: boolean
+    description: "Is this a send action that cannot be undone once executed?"
+
+  content_contains_pii:
+    type: boolean
+    description: "Does the message body or subject contain personally identifiable information (email addresses, phone numbers, national IDs, financial data)?"
+
+  content_is_misleading:
+    type: boolean
+    description: "Does the message contain claims, offers, or statistics that appear false, exaggerated, or designed to deceive recipients?"
+
+  content_is_off_brand:
+    type: boolean
+    description: "Does the message tone, language, or content deviate significantly from a professional business communication standard?"
+
+  risk_level:
+    type: choice
+    options: [low, medium, high, critical]
+    description: "Overall risk level of this communication action given all factors."

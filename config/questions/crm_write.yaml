@@ -1,0 +1,26 @@
+# Archivo original v0.1 conservado. El runtime v2.0 carga docs/jev_questions.json.
+# JEV Question Sets — CRM Write
+question_set: crm_write
+description: "Evaluates bulk writes or upserts to CRM systems."
+
+state_template: |
+  Action type: {tool}
+  Records affected: {recipients.total_count}
+  CRM entity type: {context.entity_type}
+  Fields being modified: {context.fields_modified}
+  Payload excerpt: {payload[:2000]}
+  PII flags detected by extractor: {pii_flags}
+
+questions:
+  content_contains_pii:
+    type: boolean
+    description: "Does the data being written contain personally identifiable information?"
+
+  content_is_misleading:
+    type: boolean
+    description: "Does the data being written contain false or fabricated information about customers or contacts?"
+
+  risk_level:
+    type: choice
+    options: [low, medium, high, critical]
+    description: "Overall risk level of this CRM write operation."

@@ -1,0 +1,473 @@
+openapi: 3.1.0
+info:
+  title: MyNameIsJev Gate API
+  version: 2.0.0
+  summary: Intercepta acciones de agentes y registra su evaluación de seguridad.
+  description: |
+    API del gateway de seguridad. El cliente envía una acción sintética antes de
+    ejecutarla. El gateway calcula características deterministas, consulta el
+    evaluador configurado y aplica la política local para producir `allow`,
+    `ask` o `deny`. Si JEV no está disponible, la acción queda `pending` y no
+    debe ejecutarse (do-nothing); la expiración también mantiene la acción
+    bloqueada. `ask` crea una aprobación humana pendiente.
+
+    Esta especificación describe las rutas servidas actualmente por FastAPI.
+    Todas las rutas salvo `/health` requieren el encabezado `X-Gate-Token`,
+    configurado de forma independiente en cada VM cliente.
+
+    ## Diseño y reglas del plan de implementación
+
+    Las clases aceptadas son `email_bulk`, `crm_write`, `social_post` y
+    `pr_action`. En `pr_action`, `subtype` distingue `merge`, `approve`,
+    `push_main`, `touch_ci`, `touch_secrets`, `add_dependency` y `delete_files`.
+    El extractor, no JEV, calcula conteos, coincidencias PII, indicadores de
+    archivos críticos y tamaño del diff. JEV recibe preguntas semánticas
+    simples tipadas como `boolean`, `choice` o `score`, agrupadas por clase;
+    no se le delegan conteos ni aritmética. La configuración de preguntas se
+    mantiene en `docs/jev_questions.json`.
+
+    Umbrales iniciales configurados: correo, menos de 10 destinatarios bajo,
+    10–250 medio y más de 250 alto; CRM, menos de 10 registros bajo, 10–500
+    medio y más de 500 alto. Las publicaciones sociales requieren `ask`;
+    merge requiere revisión y más de 50 archivos se deniega; push directo a
+    main se deniega; cambios en CI o secretos requieren revisión; dependencias
+    se evalúan con CVE score (el umbral no está configurado); borrado de menos
+    de 5 archivos requiere revisión, más de 5 se deniega y exactamente 5
+    requiere revisión. `dry_run` usa el veredicto `allow` configurado.
+    Estas reglas son defaults configurables en `docs/policy.defaults.json`,
+    no garantías de que toda combinación semántica produzca el mismo resultado.
+
+    Cliente TypeSafe System One: POST HTTPS al endpoint oficial con Bearer,
+    timeout inicial de 500 ms, dos reintentos con backoff exponencial y TTL de
+    300 s para decisiones `pending`; aprobaciones tienen TTL de 3600 s. Son
+    valores por defecto configurables. Solo se deben enviar datos sintéticos
+    hasta acordar minimización y tratamiento de PII. Los ejemplos usan el
+    dominio `.test`.
+  contact:
+    name: MyNameIsJev
+externalDocs:
+  description: Plan de implementación y decisiones del proyecto.
+  url: ../implementation_plan.md
+servers:
+  - url: http://localhost:8000
+    description: Servidor local por defecto (`PORT` permite cambiar el puerto).
+security:
+  - GateToken: []
+tags:
+  - name: Gate
+    description: Evaluación previa a la ejecución y consulta de decisiones.
+  - name: Approvals
+    description: Cola y resolución de aprobaciones humanas.
+  - name: Operations
+    description: Métricas agregadas y disponibilidad del gateway.
+paths:
+  /gate:
+    post:
+      tags: [Gate]
+      operationId: evaluateAction
+      summary: Evalúa una acción antes de ejecutarla
+      description: |
+        Extrae características deterministas, genera preguntas según la clase
+        de acción, evalúa la respuesta con la política configurada y persiste
+        acción y decisión en SQLite. La API responde `200` también cuando JEV no
+        está disponible: en ese caso `status` es `pending`, no hay `verdict` y
+        el consumidor debe mantener la acción sin ejecutar. La expiración del
+        pendiente no la autoriza: pasa a `expired` y permanece bloqueada.
+        Una acción `ask` crea una aprobación pendiente; una respuesta humana se
+        consulta y resuelve mediante las rutas de Approvals. La entrada incluye
+        `risk_level` por compatibilidad con el contrato, pero el riesgo
+        calculado por el extractor es el que usa el motor de política.
+      requestBody:
+        required: true
+        description: Acción conforme al contrato v2.0. `subtype` solo aplica a `pr_action`.
+        content:
+          application/json:
+            schema:
+              $ref: "../docs/schemas/action.schema.json"
+            example:
+              schema_version: "2.0"
+              action_id: "f6b5a0a9-3e13-47e7-a6a2-46c471cde009"
+              action_class: email_bulk
+              tool: mailer.send_campaign
+              actor: simulated-agent
+              args:
+                campaign_id: cmp-104
+              recipients: ["user1@example.test", "user2@example.test"]
+              payload:
+                subject: "Actualización del servicio"
+                body: "Mensaje de prueba"
+              risk_level: low
+              dry_run: true
+              created_at: "2026-10-17T12:00:00Z"
+      responses:
+        "200":
+          description: Acción evaluada o retenida en estado pendiente por indisponibilidad de JEV.
+          content:
+            application/json:
+              schema:
+                $ref: "../docs/schemas/decision.schema.json"
+              examples:
+                decided:
+                  summary: Evaluación completada
+                  value:
+                    schema_version: "2.0"
+                    action_id: "f6b5a0a9-3e13-47e7-a6a2-46c471cde009"
+                    status: decided
+                    verdict: ask
+                    reasons: ["jev_requires_human_approval"]
+                    features:
+                      recipient_count: 2
+                      pii_matches: 0
+                    jev_answers: {}
+                    source: mock
+                    latency_ms: 12.4
+                    cost_usd: 0.0
+                    decided_at: "2026-10-17T12:00:00Z"
+                pending:
+                  summary: JEV no disponible; acción retenida (do-nothing)
+                  value:
+                    schema_version: "2.0"
+                    action_id: "f6b5a0a9-3e13-47e7-a6a2-46c471cde009"
+                    status: pending
+                    reasons: ["jev_unavailable_pending_ttl", "JEVUnavailable"]
+                    features: {}
+                    jev_answers: {}
+                    source: jev
+                    latency_ms: 500.0
+                    cost_usd: 0.0
+                    decided_at: "2026-10-17T12:00:00Z"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "503":
+          description: No se pudo persistir la acción y su decisión en la auditoría.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPError"
+              example:
+                detail: No se pudo persistir la acción en auditoría
+  /gate/{action_id}:
+    get:
+      tags: [Gate]
+      operationId: getDecision
+      summary: Consulta una decisión por el action_id
+      description: Devuelve la decisión más reciente persistida para la acción indicada.
+      parameters:
+        - name: action_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Decisión persistida, incluyendo una posible resolución humana.
+          content:
+            application/json:
+              schema:
+                $ref: "../docs/schemas/decision.schema.json"
+        "404":
+          description: No existe una acción con ese identificador.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPError"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /decisions:
+    get:
+      tags: [Gate]
+      operationId: listDecisions
+      summary: Lista las decisiones recientes
+      description: Devuelve decisiones persistidas, con vencimientos aplicados antes de la consulta.
+      parameters:
+        - name: limit
+          in: query
+          description: Número máximo de decisiones recientes.
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+      responses:
+        "200":
+          description: Lista de decisiones (puede estar vacía).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "../docs/schemas/decision.schema.json"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /approvals:
+    get:
+      tags: [Approvals]
+      operationId: listApprovals
+      summary: Consulta la cola de aprobaciones
+      description: Filtra aprobaciones por estado; por defecto devuelve las pendientes.
+      parameters:
+        - name: status
+          in: query
+          description: Estado de aprobación que se desea consultar.
+          required: false
+          schema:
+            type: string
+            enum: [pending, approved, rejected]
+            default: pending
+      responses:
+        "200":
+          description: Aprobaciones coincidentes (puede estar vacía).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "../docs/schemas/approval.schema.json"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /gate/{action_id}/approve:
+    post:
+      tags: [Approvals]
+      operationId: resolveApproval
+      summary: Resuelve una aprobación humana
+      description: |
+        Registra quién aprobó o rechazó la acción. Solo se puede resolver una
+        aprobación pendiente. La decisión original `ask` se mantiene como
+        registro de la evaluación; esta ruta actualiza la aprobación.
+      parameters:
+        - name: action_id
+          in: path
+          required: true
+          description: UUID de la acción cuya aprobación se resuelve.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalRequest"
+            examples:
+              approve:
+                summary: Aprobar la acción
+                value:
+                  resolution: approved
+                  resolved_by: reviewer@example.test
+              reject:
+                summary: Rechazar la acción
+                value:
+                  resolution: rejected
+                  resolved_by: reviewer@example.test
+      responses:
+        "200":
+          description: Aprobación actualizada.
+          content:
+            application/json:
+              schema:
+                $ref: "../docs/schemas/approval.schema.json"
+              example:
+                schema_version: "2.0"
+                action_id: "f6b5a0a9-3e13-47e7-a6a2-46c471cde009"
+                status: approved
+                resolved_by: reviewer@example.test
+                resolved_at: "2026-10-17T12:05:00Z"
+        "404":
+          description: La acción o su aprobación pendiente no existe.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPError"
+              example:
+                detail: Approval pendiente no existe
+        "409":
+          description: La aprobación ya fue resuelta o no está pendiente.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPError"
+              example:
+                detail: Approval ya resuelta
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /metrics:
+    get:
+      tags: [Operations]
+      operationId: getMetrics
+      summary: Consulta métricas agregadas del gate
+      description: |
+        Calcula las métricas a partir de decisiones persistidas. `block_rate`
+        cuenta como bloqueada toda decisión distinta de `allow`, incluidos
+        `ask`, `deny`, `pending` y `expired`. Los percentiles usan decisiones
+        con latencia mayor que cero. La métrica principal del plan es minimizar
+        falsos positivos, seguida del costo medio; el endpoint actual no calcula
+        falsos positivos porque requiere etiquetas de referencia. La evaluación
+        reproducible del dataset está en `eval/` y no equivale a calidad medida
+        sobre tráfico real de JEV.
+      responses:
+        "200":
+          description: Métricas agregadas de decisiones y acciones.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Metrics"
+              example:
+                total_decisions: 20
+                verdicts:
+                  allow: 10
+                  ask: 4
+                  deny: 3
+                  pending: 2
+                  expired: 1
+                latency_ms:
+                  p50: 24.0
+                  p95: 81.5
+                cost_usd:
+                  total: 0.012
+                  mean_per_decision: 0.0006
+                block_rate: 0.5
+                deny_rate: 0.15
+                by_action_class:
+                  email_bulk: {allow: 2, ask: 1, deny: 1}
+  /health:
+    get:
+      security: []
+      tags: [Operations]
+      operationId: healthCheck
+      summary: Comprueba que el proceso responde
+      description: |
+        `status: ok` indica que el handler responde. `jev_configured` indica
+        si el cliente tiene un transporte JEV configurado; no comprueba la
+        conectividad ni la salud remota de JEV.
+      responses:
+        "200":
+          description: Estado local del gateway.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example:
+                status: ok
+                version: "2.0.0"
+                jev_configured: true
+                authentication_configured: true
+components:
+  securitySchemes:
+    GateToken:
+      type: apiKey
+      in: header
+      name: X-Gate-Token
+  schemas:
+    ApprovalRequest:
+      type: object
+      additionalProperties: false
+      required: [resolution, resolved_by]
+      properties:
+        resolution:
+          type: string
+          enum: [approved, rejected]
+        resolved_by:
+          type: string
+          minLength: 1
+          description: Identidad o identificador del revisor.
+    HTTPError:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          description: Mensaje del error HTTP.
+          oneOf:
+            - type: string
+            - type: array
+              items: {}
+    ValidationError:
+      type: object
+      required: [loc, msg, type]
+      properties:
+        loc:
+          type: array
+          items:
+            oneOf:
+              - type: string
+              - type: integer
+        msg:
+          type: string
+        type:
+          type: string
+    Metrics:
+      type: object
+      additionalProperties: false
+      required: [total_decisions, verdicts, latency_ms, cost_usd, block_rate, deny_rate, by_action_class]
+      properties:
+        total_decisions:
+          type: integer
+          minimum: 0
+        verdicts:
+          type: object
+          additionalProperties: false
+          required: [allow, ask, deny, pending, expired]
+          properties:
+            allow: {type: integer, minimum: 0}
+            ask: {type: integer, minimum: 0}
+            deny: {type: integer, minimum: 0}
+            pending: {type: integer, minimum: 0}
+            expired: {type: integer, minimum: 0}
+        latency_ms:
+          type: object
+          additionalProperties: false
+          required: [p50, p95]
+          properties:
+            p50: {type: number, minimum: 0}
+            p95: {type: number, minimum: 0}
+        cost_usd:
+          type: object
+          additionalProperties: false
+          required: [total, mean_per_decision]
+          properties:
+            total: {type: number, minimum: 0}
+            mean_per_decision: {type: number, minimum: 0}
+        block_rate: {type: number, minimum: 0, maximum: 1}
+        deny_rate: {type: number, minimum: 0, maximum: 1}
+        by_action_class:
+          type: object
+          description: Conteos de allow, ask y deny por clase que tenga decisiones persistidas.
+          additionalProperties:
+            type: object
+            additionalProperties: false
+            required: [allow, ask, deny]
+            properties:
+              allow: {type: integer, minimum: 0}
+              ask: {type: integer, minimum: 0}
+              deny: {type: integer, minimum: 0}
+    Health:
+      type: object
+      additionalProperties: false
+      required: [status, version, jev_configured, authentication_configured]
+      properties:
+        status:
+          type: string
+          const: ok
+        version:
+          type: string
+          const: "2.0.0"
+        jev_configured:
+          type: boolean
+          description: Indica la presencia de transporte configurado; no es una prueba de conectividad.
+        authentication_configured:
+          type: boolean
+          description: Indica que GATE_TOKEN está configurado para proteger las rutas privadas.
+  responses:
+    ValidationError:
+      description: El cuerpo, parámetro o UUID no satisface el contrato de entrada.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [detail]
+            properties:
+              detail:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ValidationError"

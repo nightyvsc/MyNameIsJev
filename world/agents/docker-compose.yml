@@ -1,0 +1,33 @@
+services:
+  sales-agent:
+    build:
+      context: ../..
+      dockerfile: world/agents/Dockerfile
+    command: ["world.agents.agent_sales", "--count", "5", "--dry-run"]
+    profiles: ["agents"]
+    environment: &agent_environment
+      GATEWAY_BASE_URL: "${GATEWAY_BASE_URL:-http://127.0.0.1:8000}"
+      GATE_TOKEN: "${GATE_TOKEN:-}"
+      WORLD_BASE_URL: "${WORLD_BASE_URL:-http://127.0.0.1:3001}"
+      SOCIAL_BASE_URL: "${SOCIAL_BASE_URL:-http://127.0.0.1:3003}"
+      MAIL_SMTP_HOST: "${MAIL_SMTP_HOST:-127.0.0.1}"
+      MAIL_SMTP_PORT: "${MAIL_SMTP_PORT:-2525}"
+    restart: "no"
+
+  social-agent:
+    build:
+      context: ../..
+      dockerfile: world/agents/Dockerfile
+    command: ["world.agents.agent_social", "--count", "4", "--dry-run"]
+    profiles: ["agents"]
+    environment: *agent_environment
+    restart: "no"
+
+  devops-agent:
+    build:
+      context: ../..
+      dockerfile: world/agents/Dockerfile
+    command: ["world.agents.agent_devops", "--count", "7", "--dry-run"]
+    profiles: ["agents"]
+    environment: *agent_environment
+    restart: "no"

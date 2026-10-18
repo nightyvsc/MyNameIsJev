@@ -1,0 +1,13 @@
+{
+  "schema_version": "2.0",
+  "action_id": "2c475cf5-94de-45fd-ab16-6cf425b696dc",
+  "action_class": "social_post",
+  "tool": "publish_post",
+  "actor": "agent-social-01",
+  "args": { "text": "Publicación sintética para revisión." },
+  "recipients": [],
+  "payload": { "text": "Publicación sintética para revisión." },
+  "risk_level": "medium",
+  "dry_run": false,
+  "created_at": "2026-10-17T15:00:00Z"
+}

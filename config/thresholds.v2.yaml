@@ -1,0 +1,135 @@
+# Política de MyNameIsJev — contrato v2.0
+#
+# Espejo legible de la configuración activa en ../docs/policy.defaults.json.
+# El runtime carga el JSON canónico; editar solo este YAML no cambia el
+# comportamiento del gateway. Mantener ambos archivos sincronizados.
+# Los valores son defaults configurables y pueden cambiar al calibrar la política.
+# La versión anterior completa se conserva en config/thresholds.v0.1.yaml.
+
+contract_version: "2.0"
+canonical_runtime_config: "docs/policy.defaults.json"
+
+# -----------------------------------------------------------------------------
+# Comportamiento global
+# -----------------------------------------------------------------------------
+dry_run_verdict: allow
+
+jev:
+  timeout_ms: 500
+  retry_count: 2
+  retry_backoff: exponential
+  retry_base_delay_ms: 100
+  input_cost_usd_per_million: 0.042
+  failure_mode: do_nothing
+  pending_ttl_seconds: 300
+approval_ttl_seconds: 3600
+
+# Prioridad al combinar señales: deny > ask > allow.
+# Si JEV no responde, no se concede ni deniega silenciosamente: la acción queda
+# pending durante el TTL y luego expired; ambos estados deben permanecer sin ejecutar.
+
+# -----------------------------------------------------------------------------
+# Reglas deterministas por clase de acción
+# -----------------------------------------------------------------------------
+action_classes:
+  email_bulk:
+    reversible: false
+    questions_file: "docs/jev_questions.json#/classes/email_bulk"
+    recipient_count:
+      low_lt: 10
+      medium_max: 250
+      high_gt: 250
+    # N=250 pertenece a medium; N>250 es high. El conteo lo calcula el extractor.
+
+  crm_write:
+    reversible: true
+    questions_file: "docs/jev_questions.json#/classes/crm_write"
+    record_count:
+      low_lt: 10
+      medium_max: 500
+      high_gt: 500
+    # N=500 pertenece a medium; N>500 es high. El conteo lo calcula el extractor.
+
+  social_post:
+    reversible: true
+    questions_file: "docs/jev_questions.json#/classes/social_post"
+    always: ask
+
+  pr_action:
+    questions_file: "docs/jev_questions.json#/classes/pr_action"
+    subtypes:
+      merge:
+        reversible: false
+        default: ask
+        deny_changed_files_gt: 50
+      approve:
+        default: ask
+      push_main:
+        reversible: false
+        always: deny
+      touch_ci:
+        always: ask
+      touch_secrets:
+        always: ask
+      add_dependency:
+        decision_by: cve_score
+        cve_threshold: null # Sin calibrar: no inventar un umbral CVE.
+      delete_files:
+        reversible: false
+        ask_changed_files_lt: 5
+        deny_changed_files_gt: 5
+        five_files: ask
+        # Exactamente 5 archivos también requiere revisión.
+
+# -----------------------------------------------------------------------------
+# Umbrales de confianza para respuestas probabilísticas de JEV
+# -----------------------------------------------------------------------------
+# Valores expresados como probabilidad [0,1]. La evaluación semántica se hace
+# con preguntas tipadas en docs/jev_questions.json; los conteos siguen siendo
+# responsabilidad del código determinista.
+jev_confidence:
+  irreversible:
+    ask_at: 0.50
+    deny_at: 0.80
+  reversible:
+    ask_at: 0.60
+    deny_at: 0.85
+
+  email_bulk:
+    content_contains_pii: {ask_at: 0.60, deny_at: 0.85}
+    content_is_misleading: {deny_at: 0.70}
+    content_is_off_brand: {ask_at: 0.65}
+    critical_risk: {deny_at: 0.80}
+
+  crm_write:
+    content_contains_pii: {ask_at: 0.65, deny_at: 0.90}
+    content_is_misleading: {deny_at: 0.75}
+    critical_risk: {deny_at: 0.80}
+
+  social_post:
+    content_contains_pii: {deny_at: 0.80}
+    content_is_misleading: {deny_at: 0.70}
+    content_is_off_brand: {ask_at: 0.60}
+    content_is_inflammatory: {deny_at: 0.75}
+    critical_risk: {deny_at: 0.80}
+
+  pr_action:
+    contains_secret_leak: {deny_at: 0.75}
+    introduces_security_vulnerability: {deny_at: 0.75}
+    has_breaking_api_change: {ask_at: 0.65}
+    adds_unreviewed_dependency: {ask_at: 0.60}
+    critical_risk: {deny_at: 0.80}
+    flag_for_security_team: {deny_at: 0.65}
+    request_changes: {ask_at: 0.70}
+
+# -----------------------------------------------------------------------------
+# Semántica de los defaults v2.0
+# -----------------------------------------------------------------------------
+# - Las reglas duras por subtipo y los umbrales deterministas se combinan con
+#   las probabilidades JEV; las reglas de riesgo prevalecen sobre señales benignas.
+# - La política actual interpreta señales de revisión como ask.
+# - dry_run devuelve el valor configurado arriba (allow).
+# - Una acción ask crea Approval pendiente; aprobación -> allow y rechazo -> deny.
+# - El vencimiento de evaluación queda expired sin veredicto; el vencimiento de
+#   Approval se registra como rechazo y la decisión pasa a deny.
+# - Las acciones, respuestas y decisiones usan datos sintéticos en desarrollo.

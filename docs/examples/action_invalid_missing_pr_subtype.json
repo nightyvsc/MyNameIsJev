@@ -1,0 +1,13 @@
+{
+  "schema_version": "2.0",
+  "action_id": "3f0c2a9e-5b1d-4c7a-9a52-0d6e1f8b7c11",
+  "action_class": "pr_action",
+  "tool": "merge_pull_request",
+  "actor": "agent-dev-01",
+  "args": {},
+  "recipients": [],
+  "payload": {},
+  "risk_level": "medium",
+  "dry_run": false,
+  "created_at": "2026-10-17T15:00:00Z"
+}

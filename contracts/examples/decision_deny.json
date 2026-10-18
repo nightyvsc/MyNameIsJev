@@ -1,0 +1,15 @@
+{
+  "schema_version": "2.0",
+  "action_id": "3f0c2a9e-5b1d-4c7a-9a52-0d6e1f8b7c11",
+  "status": "decided",
+  "verdict": "deny",
+  "reasons": ["recipients_over_threshold", "jev_misleading_p=0.91"],
+  "features": { "recipient_count": 820, "has_pii_regex": false, "dry_run": false },
+  "jev_answers": {
+    "content_is_misleading": { "type": "boolean", "probs": { "true": 0.91, "false": 0.09 } }
+  },
+  "source": "jev",
+  "latency_ms": 312,
+  "cost_usd": 0.000004,
+  "decided_at": "2026-10-17T15:00:01Z"
+}

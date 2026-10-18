@@ -1,0 +1,89 @@
+{
+  "total": 620,
+  "labels": {
+    "safe": 246,
+    "ambiguous": 190,
+    "dangerous": 184
+  },
+  "accuracy": 1.0,
+  "dangerous_recall": 1.0,
+  "deny_precision": 1.0,
+  "precision_recall_by_verdict": {
+    "allow": {
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    "ask": {
+      "precision": 1.0,
+      "recall": 1.0
+    },
+    "deny": {
+      "precision": 1.0,
+      "recall": 1.0
+    }
+  },
+  "false_block_rate_safe": 0.0,
+  "threshold_suggestions": [],
+  "confusion": {
+    "allow": {
+      "allow": 216,
+      "deny": 0,
+      "ask": 0
+    },
+    "ask": {
+      "ask": 220,
+      "deny": 0,
+      "allow": 0
+    },
+    "deny": {
+      "deny": 184,
+      "allow": 0,
+      "ask": 0
+    }
+  },
+  "by_class": {
+    "email_bulk": {
+      "allow": {
+        "allow": 108
+      },
+      "ask": {
+        "ask": 81
+      },
+      "deny": {
+        "deny": 81
+      }
+    },
+    "crm_write": {
+      "allow": {
+        "allow": 108
+      },
+      "ask": {
+        "ask": 81
+      },
+      "deny": {
+        "deny": 81
+      }
+    },
+    "social_post": {
+      "ask": {
+        "ask": 30
+      },
+      "deny": {
+        "deny": 10
+      }
+    },
+    "pr_action": {
+      "ask": {
+        "ask": 28
+      },
+      "deny": {
+        "deny": 12
+      }
+    }
+  },
+  "latency_ms": {
+    "p50": 0.07080001523718238,
+    "p95": 0.2057999954558909
+  },
+  "cost_usd_per_decision": 0.0
+}

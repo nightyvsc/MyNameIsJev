@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mynameisjew.dev/schemas/decision.schema.json",
+  "title": "Decision",
+  "description": "The gate's verdict for an intercepted Action. Produced by combining the deterministic extractor output, the JEV response, and the policy engine threshold evaluation.",
+  "type": "object",
+  "required": [
+    "id",
+    "action_id",
+    "timestamp",
+    "verdict",
+    "policy_reasons",
+    "latency_ms",
+    "cost_usd",
+    "jev_response"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for this decision (UUIDv4)."
+    },
+    "action_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The ID of the Action this decision corresponds to."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp of when the decision was issued."
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["allow", "ask", "deny", "pending"],
+      "description": "The gate's final verdict. 'pending' is set when JEV is unreachable (do-nothing policy). 'ask' enqueues the action for human approval."
+    },
+    "policy_reasons": {
+      "type": "array",
+      "minItems": 0,
+      "items": {
+        "$ref": "#/$defs/PolicyReason"
+      },
+      "description": "Ordered list of reasons produced by the policy engine that drove the verdict. Each reason maps to a JEV answer or a deterministic rule."
+    },
+    "jev_response": {
+      "$ref": "#/$defs/JEVResponse"
+    },
+    "latency_ms": {
+      "$ref": "#/$defs/LatencyBreakdown"
+    },
+    "cost_usd": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Estimated USD cost of the JEV call for this decision."
+    },
+    "human_approval": {
+      "$ref": "#/$defs/HumanApproval"
+    },
+    "ttl_expires_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "For 'pending' verdicts only. If JEV does not respond before this timestamp, the action is permanently denied."
+    }
+  },
+  "$defs": {
+    "PolicyReason": {
+      "type": "object",
+      "required": ["code", "description", "source", "severity"],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Machine-readable reason code.",
+          "examples": [
+            "RECIPIENT_COUNT_EXCEEDED",
+            "PII_DETECTED",
+            "SECRET_LEAK_HIGH_PROBABILITY",
+            "IRREVERSIBLE_ACTION",
+            "CONTENT_MISLEADING",
+            "BREAKING_API_CHANGE",
+            "TOUCHES_CI_PIPELINE",
+            "DEPENDENCY_UNREVIEWED"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable explanation of the reason."
+        },
+        "source": {
+          "type": "string",
+          "enum": ["deterministic", "jev"],
+          "description": "Whether this reason was produced by the deterministic extractor or by JEV."
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["info", "warn", "block"],
+          "description": "Impact of this reason on the verdict. 'block' alone can trigger deny."
+        },
+        "probability": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "JEV calibrated probability for this reason. Only present when source = 'jev'."
+        }
+      }
+    },
+    "JEVResponse": {
+      "type": "object",
+      "required": ["raw_answers", "model", "call_id"],
+      "additionalProperties": false,
+      "description": "The raw, structured response from the JEV API, stored as-is for auditability.",
+      "properties": {
+        "model": {
+          "type": "string",
+          "description": "JEV model version used (e.g. 'jev-1.14')."
+        },
+        "call_id": {
+          "type": "string",
+          "description": "Unique identifier returned by the JEV API for this call."
+        },
+        "raw_answers": {
+          "type": "object",
+          "description": "Full answer map as returned by JEV. Keys are question names; values are typed answer objects.",
+          "additionalProperties": {
+            "$ref": "#/$defs/JEVAnswer"
+          }
+        },
+        "error": {
+          "type": "object",
+          "description": "Populated only when JEV returned an error or timed out.",
+          "additionalProperties": false,
+          "properties": {
+            "code": { "type": "string" },
+            "message": { "type": "string" },
+            "retries_attempted": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "JEVAnswer": {
+      "type": "object",
+      "required": ["value", "probability"],
+      "additionalProperties": true,
+      "description": "A single answer from JEV. For choice questions, 'probabilities' contains the full distribution.",
+      "properties": {
+        "value": {
+          "description": "The selected value. Boolean for boolean questions, string for choice, number for score."
+        },
+        "probability": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Calibrated confidence of the selected value."
+        },
+        "level": {
+          "type": "string",
+          "description": "Human-readable label for score questions (e.g., 'Critical')."
+        },
+        "probabilities": {
+          "type": "object",
+          "additionalProperties": { "type": "number" },
+          "description": "Full probability distribution over all options. Only present for choice questions."
+        }
+      }
+    },
+    "LatencyBreakdown": {
+      "type": "object",
+      "required": ["total_ms"],
+      "additionalProperties": false,
+      "description": "End-to-end latency breakdown for observability and p50/p95 tracking.",
+      "properties": {
+        "total_ms": {
+          "type": "number",
+          "description": "Total gate latency from intercept to verdict."
+        },
+        "extractor_ms": {
+          "type": "number",
+          "description": "Time spent in the deterministic extractor."
+        },
+        "jev_ms": {
+          "type": "number",
+          "description": "Round-trip time to the JEV API."
+        },
+        "policy_ms": {
+          "type": "number",
+          "description": "Time spent in the policy engine."
+        }
+      }
+    },
+    "HumanApproval": {
+      "type": "object",
+      "description": "Only populated for 'ask' verdicts after a human has acted on the queue.",
+      "additionalProperties": false,
+      "required": ["approver_id", "approved", "approved_at"],
+      "properties": {
+        "approver_id": {
+          "type": "string",
+          "description": "ID of the human who acted on the approval queue."
+        },
+        "approved": {
+          "type": "boolean",
+          "description": "True if the human approved the action, false if they rejected it."
+        },
+        "approved_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "note": {
+          "type": "string",
+          "description": "Optional comment from the approver."
+        }
+      }
+    }
+  }
+}
