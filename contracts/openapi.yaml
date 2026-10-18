@@ -12,8 +12,8 @@ info:
     bloqueada. `ask` crea una aprobación humana pendiente.
 
     Esta especificación describe las rutas servidas actualmente por FastAPI.
-    No declara autenticación porque el gateway actual no aplica middleware de
-    autenticación.
+    Todas las rutas salvo `/health` requieren el encabezado `X-Gate-Token`,
+    configurado de forma independiente en cada VM cliente.
 
     ## Diseño y reglas del plan de implementación
 
@@ -37,12 +37,12 @@ info:
     Estas reglas son defaults configurables en `docs/policy.defaults.json`,
     no garantías de que toda combinación semántica produzca el mismo resultado.
 
-    Cliente JEV configurado: timeout inicial de 500 ms, dos reintentos con
-    backoff exponencial y TTL de 300 s para decisiones `pending`; aprobaciones
-    tienen TTL de 3600 s. Son valores por defecto configurables. El gateway
-    no documenta aquí un formato HTTP de JEV: el transporte real sigue detrás
-    de una interfaz hasta disponer de su contrato oficial. Los datos de
-    ejemplo son sintéticos y usan el dominio `.test`.
+    Cliente TypeSafe System One: POST HTTPS al endpoint oficial con Bearer,
+    timeout inicial de 500 ms, dos reintentos con backoff exponencial y TTL de
+    300 s para decisiones `pending`; aprobaciones tienen TTL de 3600 s. Son
+    valores por defecto configurables. Solo se deben enviar datos sintéticos
+    hasta acordar minimización y tratamiento de PII. Los ejemplos usan el
+    dominio `.test`.
   contact:
     name: MyNameIsJev
 externalDocs:
@@ -51,6 +51,8 @@ externalDocs:
 servers:
   - url: http://localhost:8000
     description: Servidor local por defecto (`PORT` permite cambiar el puerto).
+security:
+  - GateToken: []
 tags:
   - name: Gate
     description: Evaluación previa a la ejecución y consulta de decisiones.
@@ -131,7 +133,7 @@ paths:
                     features: {}
                     jev_answers: {}
                     source: jev
-                    latency_ms: 5000.0
+                    latency_ms: 500.0
                     cost_usd: 0.0
                     decided_at: "2026-10-17T12:00:00Z"
         "422":
@@ -144,6 +146,34 @@ paths:
                 $ref: "#/components/schemas/HTTPError"
               example:
                 detail: No se pudo persistir la acción en auditoría
+  /gate/{action_id}:
+    get:
+      tags: [Gate]
+      operationId: getDecision
+      summary: Consulta una decisión por el action_id
+      description: Devuelve la decisión más reciente persistida para la acción indicada.
+      parameters:
+        - name: action_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Decisión persistida, incluyendo una posible resolución humana.
+          content:
+            application/json:
+              schema:
+                $ref: "../docs/schemas/decision.schema.json"
+        "404":
+          description: No existe una acción con ese identificador.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HTTPError"
+        "422":
+          $ref: "#/components/responses/ValidationError"
   /decisions:
     get:
       tags: [Gate]
@@ -303,6 +333,7 @@ paths:
                   email_bulk: {allow: 2, ask: 1, deny: 1}
   /health:
     get:
+      security: []
       tags: [Operations]
       operationId: healthCheck
       summary: Comprueba que el proceso responde
@@ -320,8 +351,14 @@ paths:
               example:
                 status: ok
                 version: "2.0.0"
-                jev_configured: false
+                jev_configured: true
+                authentication_configured: true
 components:
+  securitySchemes:
+    GateToken:
+      type: apiKey
+      in: header
+      name: X-Gate-Token
   schemas:
     ApprovalRequest:
       type: object
@@ -407,7 +444,7 @@ components:
     Health:
       type: object
       additionalProperties: false
-      required: [status, version, jev_configured]
+      required: [status, version, jev_configured, authentication_configured]
       properties:
         status:
           type: string
@@ -418,6 +455,9 @@ components:
         jev_configured:
           type: boolean
           description: Indica la presencia de transporte configurado; no es una prueba de conectividad.
+        authentication_configured:
+          type: boolean
+          description: Indica que GATE_TOKEN está configurado para proteger las rutas privadas.
   responses:
     ValidationError:
       description: El cuerpo, parámetro o UUID no satisface el contrato de entrada.

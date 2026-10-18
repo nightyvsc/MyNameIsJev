@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "decision.schema.json",
   "title": "Decision",
-  "description": "Resultado del gate. Conserva el veredicto, señales deterministas, respuestas tipadas de JEV, latencia, costo estimado y timestamp para auditoría.",
+  "description": "Resultado del gate. Conserva el veredicto, señales deterministas, respuestas tipadas de JEV, uso reportado, latencia, costo y timestamp para auditoría.",
   "type": "object",
   "required": ["schema_version", "action_id", "status", "reasons", "features", "jev_answers", "source", "latency_ms", "cost_usd", "decided_at"],
   "additionalProperties": false,
@@ -22,13 +22,18 @@
         "additionalProperties": false,
         "properties": {
           "type": { "enum": ["boolean", "choice", "score"], "description": "Tipo de pregunta definido en la configuración por clase." },
-          "probs": { "type": "object", "minProperties": 1, "description": "Distribución de probabilidad asociada a las etiquetas posibles.", "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 } }
+          "probs": { "type": "object", "minProperties": 1, "description": "Distribución de probabilidad asociada a las etiquetas posibles.", "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 } },
+          "value": { "type": ["string", "number", "null"], "description": "Valor o puntuación reportado por TypeSafe, cuando está disponible." },
+          "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1, "description": "Confianza reportada por TypeSafe, cuando está disponible." }
         }
       }
     },
     "source": { "enum": ["jev", "mock"], "description": "Implementación del DecisionModel que produjo el resultado." },
+    "provider_model": { "type": ["string", "null"], "description": "Identificador del modelo reportado por TypeSafe." },
+    "input_tokens": { "type": ["integer", "null"], "minimum": 0, "description": "Tokens de entrada reportados por TypeSafe." },
+    "output_tokens": { "type": ["integer", "null"], "minimum": 0, "description": "Tokens de salida reportados por TypeSafe." },
     "latency_ms": { "type": "number", "minimum": 0, "description": "Latencia total informada por el modelo para esta evaluación, en milisegundos." },
-    "cost_usd": { "type": "number", "minimum": 0, "description": "Costo de entrada estimado para esta decisión; el mock reporta cero." },
+    "cost_usd": { "type": "number", "minimum": 0, "description": "Costo de tokens de entrada según el uso reportado y la tarifa configurada; el mock reporta cero." },
     "decided_at": { "type": "string", "format": "date-time", "description": "Marca temporal ISO 8601 de creación o actualización de la decisión." }
   },
   "allOf": [

@@ -15,7 +15,9 @@ class GatewayAPIError(RuntimeError):
     pass
 
 
-def gateway_get(path: str, params: dict[str, str | int] | None = None) -> dict[str, Any]:
+def gateway_get(
+    path: str, params: dict[str, str | int] | None = None
+) -> dict[str, Any] | list[dict[str, Any]]:
     if not GATEWAY_BASE_URL:
         raise GatewayAPIError("GATEWAY_BASE_URL is not configured.")
     if not GATE_TOKEN:
@@ -37,7 +39,7 @@ def gateway_get(path: str, params: dict[str, str | int] | None = None) -> dict[s
         raise GatewayAPIError(
             f"Cannot read {path} from the gateway: {type(error).__name__}."
         ) from error
-    if not isinstance(result, dict):
+    if not isinstance(result, (dict, list)):
         raise GatewayAPIError(f"Gateway returned an invalid response for {path}.")
     return result
 
@@ -78,20 +80,11 @@ def _show_gateway_error(error: GatewayAPIError) -> None:
     st.caption("Check gateway reachability, GATEWAY_BASE_URL, GATE_TOKEN, and the gateway logs.")
 
 
-def _decision(item: Any) -> dict[str, Any]:
-    if not isinstance(item, dict):
-        return {}
-    nested = item.get("decision")
-    return nested if isinstance(nested, dict) else item
-
-
-def _render_approval_controls(item: dict[str, Any]) -> None:
-    decision = _decision(item)
-    decision_id = decision.get("id")
-    if decision.get("verdict") != "ask" or not isinstance(decision_id, str):
+def _render_approval_controls(approval: dict[str, Any]) -> None:
+    decision_id = approval.get("action_id")
+    if not isinstance(decision_id, str):
         return
     with st.form(f"approval-{decision_id}"):
-        note = st.text_input("Nota (opcional)", key=f"note-{decision_id}")
         approver = st.text_input(
             "Aprobador",
             value=APPROVER_ID,
@@ -108,9 +101,8 @@ def _render_approval_controls(item: dict[str, Any]) -> None:
             result = gateway_post(
                 f"/gate/{decision_id}/approve",
                 {
-                    "approver_id": approver.strip(),
-                    "approved": submitted_approve,
-                    "note": note,
+                    "resolution": "approved" if submitted_approve else "rejected",
+                    "resolved_by": approver.strip(),
                 },
             )
         except GatewayAPIError as error:
@@ -123,75 +115,74 @@ def _render_approval_controls(item: dict[str, Any]) -> None:
 @st.fragment(run_every="2s")
 def _render_live_feed() -> None:
     try:
-        response = gateway_get("/audit/log", {"limit": 100, "offset": 0})
+        decisions = gateway_get("/decisions", {"limit": 100})
+        approvals = gateway_get("/approvals", {"status": "pending"})
     except GatewayAPIError as error:
         _show_gateway_error(error)
         return
-    items = response.get("items")
-    if not isinstance(items, list):
-        st.error("La API del gateway no devolvió una lista de decisiones.")
+    if not isinstance(decisions, list) or not isinstance(approvals, list):
+        st.error("La API del gateway no devolvió listas de decisiones y aprobaciones.")
         return
-    st.caption(f"{response.get('total', len(items))} decisiones registradas · refresco cada 2 s")
+    st.caption(f"{len(decisions)} decisiones recientes · refresco cada 2 s")
+    pending_by_id = {
+        approval.get("action_id"): approval
+        for approval in approvals
+        if isinstance(approval.get("action_id"), str)
+    }
     rows: list[dict[str, Any]] = []
-    pending_asks: list[dict[str, Any]] = []
-    for entry in items:
-        decision = _decision(entry)
-        action = entry.get("action", {}) if isinstance(entry, dict) else {}
-        if not isinstance(action, dict):
-            action = {}
-        actor = action.get("actor") or decision.get("actor") or ""
-        if isinstance(actor, dict):
-            actor = actor.get("name") or actor.get("id") or ""
+    for decision in decisions:
         rows.append(
             {
-                "timestamp": decision.get("timestamp"),
-                "actor": actor,
-                "action_class": action.get("action_class", decision.get("action_class", "")),
-                "tool": action.get("tool", decision.get("tool", "")),
+                "timestamp": decision.get("decided_at"),
+                "action_id": decision.get("action_id"),
+                "status": decision.get("status"),
                 "verdict": decision.get("verdict", ""),
-                "latency_ms": (decision.get("latency_ms") or {}).get("total_ms"),
+                "latency_ms": decision.get("latency_ms"),
                 "cost_usd": decision.get("cost_usd"),
             }
         )
-        if decision.get("verdict") == "ask" and not decision.get("human_approval"):
-            pending_asks.append(entry)
     st.dataframe(rows, use_container_width=True, hide_index=True)
-    for entry in pending_asks:
-        decision = _decision(entry)
-        with st.expander(f"Approval required · {decision.get('id', 'unknown')}"):
-            st.json(entry)
-            _render_approval_controls(entry)
+    for decision in decisions:
+        action_id = decision.get("action_id")
+        approval = pending_by_id.get(action_id)
+        if approval is not None:
+            with st.expander(f"Approval required · {action_id}"):
+                st.json(decision)
+                _render_approval_controls(approval)
 
 
 def render_queue() -> None:
     st.subheader("Cola de aprobación")
     try:
-        response = gateway_get("/queue", {"limit": 200, "offset": 0})
+        approvals = gateway_get("/approvals", {"status": "pending"})
+        decisions = gateway_get("/decisions", {"limit": 1000})
     except GatewayAPIError as error:
         _show_gateway_error(error)
         return
-    items = response.get("items")
-    if not isinstance(items, list):
-        st.error("La API del gateway no devolvió una lista de aprobaciones.")
+    if not isinstance(approvals, list) or not isinstance(decisions, list):
+        st.error("La API del gateway no devolvió listas de aprobaciones y decisiones.")
         return
-    st.metric("Pendientes", response.get("total", len(items)))
-    if not items:
+    st.metric("Pendientes", len(approvals))
+    if not approvals:
         st.info("No hay acciones esperando aprobación.")
         return
-    for item in items:
-        decision = _decision(item)
-        with st.expander(
-            f"{decision.get('action_id', 'acción')} · {decision.get('verdict', 'unknown')}"
-        ):
-            st.json(item)
-            _render_approval_controls(item)
+    decisions_by_id = {decision.get("action_id"): decision for decision in decisions}
+    for approval in approvals:
+        action_id = approval.get("action_id")
+        with st.expander(f"{action_id or 'acción'} · aprobación pendiente"):
+            st.json(
+                {
+                    "approval": approval,
+                    "decision": decisions_by_id.get(action_id),
+                }
+            )
+            _render_approval_controls(approval)
 
 
 @st.fragment(run_every="10s")
 def _render_metrics() -> None:
-    window = st.selectbox("Ventana", ["1h", "6h", "24h", "7d"], index=2, key="metrics_window")
     try:
-        metrics = gateway_get("/audit/metrics", {"window": window})
+        metrics = gateway_get("/metrics")
     except GatewayAPIError as error:
         _show_gateway_error(error)
         return
@@ -208,7 +199,6 @@ def _render_metrics() -> None:
     third.metric("Tasa de bloqueos", f"{metrics.get('block_rate', 0):.1%}")
     st.subheader("Decisiones por veredicto")
     st.bar_chart({name: verdicts.get(name, 0) for name in ("allow", "ask", "deny", "pending")})
-    st.metric("Falsos positivos estimados", f"{metrics.get('false_positive_rate', 0):.1%}")
 
 
 def main() -> None:

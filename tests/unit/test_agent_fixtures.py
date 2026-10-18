@@ -21,15 +21,14 @@ class AgentFixtureTests(unittest.TestCase):
         self.assertEqual(
             {action["action_class"] for action in actions},
             {
-                "mass_communication",
+                "email_bulk",
                 "crm_write",
                 "social_post",
-                "repo_merge",
-                "repo_push_main",
-                "repo_ci_secrets",
-                "repo_add_dependency",
-                "repo_delete_files",
+                "pr_action",
             },
+        )
+        self.assertTrue(
+            all("subtype" in action for action in actions if action["action_class"] == "pr_action")
         )
 
     def test_repeated_scenario_gets_a_fresh_id_and_timestamp(self) -> None:
@@ -37,9 +36,9 @@ class AgentFixtureTests(unittest.TestCase):
         first = prepare_action(scenario, dry_run=True)
         second = prepare_action(scenario, dry_run=True)
 
-        self.assertNotEqual(first["id"], second["id"])
-        self.assertTrue(first["is_dry_run"])
-        self.assertTrue(second["is_dry_run"])
+        self.assertNotEqual(first["action_id"], second["action_id"])
+        self.assertTrue(first["dry_run"])
+        self.assertTrue(second["dry_run"])
         validate_action(first)
         validate_action(second)
 

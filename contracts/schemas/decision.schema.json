@@ -2,34 +2,39 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "decision.schema.json",
   "title": "Decision",
-  "description": "Resultado del gate; pending representa do-nothing mientras JEV no responde.",
+  "description": "Resultado del gate. Conserva el veredicto, señales deterministas, respuestas tipadas de JEV, uso reportado, latencia, costo y timestamp para auditoría.",
   "type": "object",
   "required": ["schema_version", "action_id", "status", "reasons", "features", "jev_answers", "source", "latency_ms", "cost_usd", "decided_at"],
   "additionalProperties": false,
   "properties": {
-    "schema_version": { "const": "2.0" },
-    "action_id": { "type": "string", "format": "uuid" },
-    "status": { "enum": ["pending", "decided", "expired"] },
-    "verdict": { "enum": ["allow", "ask", "deny"] },
-    "reasons": { "type": "array", "items": { "type": "string" } },
-    "features": { "type": "object", "description": "Hechos calculados determinísticamente, por ejemplo recipient_count, records_count, changed_files, pii_matches." },
+    "schema_version": { "const": "2.0", "description": "Versión mayor del contrato compartido." },
+    "action_id": { "type": "string", "format": "uuid", "description": "Identificador de la Action evaluada." },
+    "status": { "enum": ["pending", "decided", "expired"], "description": "Estado del procesamiento. pending y expired son estados, no veredictos." },
+    "verdict": { "enum": ["allow", "ask", "deny"], "description": "Resultado de política; se omite mientras status no sea decided." },
+    "reasons": { "type": "array", "items": { "type": "string" }, "description": "Códigos cortos y ordenados que explican las señales que determinaron la política." },
+    "features": { "type": "object", "description": "Hechos calculados determinísticamente: recipient_count, records_count, PII por regex, changed_files, diff_lines, flags de CI/secretos y riesgo calculado. Se amplía según los extractores." },
     "jev_answers": {
       "type": "object",
-      "description": "question_id -> respuesta tipada con probabilidades por etiqueta.",
+      "description": "Mapa question_id -> respuesta tipada con probabilidades por etiqueta; conserva el resultado estructurado recibido del adaptador JEV/mock.",
       "additionalProperties": {
         "type": "object",
         "required": ["type", "probs"],
         "additionalProperties": false,
         "properties": {
-          "type": { "enum": ["boolean", "choice", "score"] },
-          "probs": { "type": "object", "minProperties": 1, "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 } }
+          "type": { "enum": ["boolean", "choice", "score"], "description": "Tipo de pregunta definido en la configuración por clase." },
+          "probs": { "type": "object", "minProperties": 1, "description": "Distribución de probabilidad asociada a las etiquetas posibles.", "additionalProperties": { "type": "number", "minimum": 0, "maximum": 1 } },
+          "value": { "type": ["string", "number", "null"], "description": "Valor o puntuación reportado por TypeSafe, cuando está disponible." },
+          "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1, "description": "Confianza reportada por TypeSafe, cuando está disponible." }
         }
       }
     },
-    "source": { "enum": ["jev", "mock"] },
-    "latency_ms": { "type": "number", "minimum": 0 },
-    "cost_usd": { "type": "number", "minimum": 0 },
-    "decided_at": { "type": "string", "format": "date-time" }
+    "source": { "enum": ["jev", "mock"], "description": "Implementación del DecisionModel que produjo el resultado." },
+    "provider_model": { "type": ["string", "null"], "description": "Identificador del modelo reportado por TypeSafe." },
+    "input_tokens": { "type": ["integer", "null"], "minimum": 0, "description": "Tokens de entrada reportados por TypeSafe." },
+    "output_tokens": { "type": ["integer", "null"], "minimum": 0, "description": "Tokens de salida reportados por TypeSafe." },
+    "latency_ms": { "type": "number", "minimum": 0, "description": "Latencia total informada por el modelo para esta evaluación, en milisegundos." },
+    "cost_usd": { "type": "number", "minimum": 0, "description": "Costo de tokens de entrada según el uso reportado y la tarifa configurada; el mock reporta cero." },
+    "decided_at": { "type": "string", "format": "date-time", "description": "Marca temporal ISO 8601 de creación o actualización de la decisión." }
   },
   "allOf": [
     { "if": { "properties": { "status": { "const": "decided" } }, "required": ["status"] }, "then": { "required": ["verdict"] }, "else": { "not": { "required": ["verdict"] } } }

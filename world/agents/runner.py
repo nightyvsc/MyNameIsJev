@@ -9,7 +9,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Any
@@ -43,22 +43,72 @@ def make_action(
     context: dict[str, Any] | None = None,
     dry_run: bool,
 ) -> dict[str, Any]:
+    action_classes = {
+        "mass_communication": "email_bulk",
+        "crm_write": "crm_write",
+        "social_post": "social_post",
+        "repo_merge": "pr_action",
+        "repo_push_main": "pr_action",
+        "repo_ci_secrets": "pr_action",
+        "repo_add_dependency": "pr_action",
+        "repo_delete_files": "pr_action",
+    }
+    subtypes = {
+        "repo_merge": "merge",
+        "repo_push_main": "push_main",
+        "repo_ci_secrets": "touch_ci"
+        if diff_stats and diff_stats.get("touches_ci")
+        else "touch_secrets",
+        "repo_add_dependency": "add_dependency",
+        "repo_delete_files": "delete_files",
+    }
+    contract_class = action_classes[action_class]
+    recipient_count = int((recipients or {}).get("total_count", 0))
+    recipient_ids = (context or {}).get("recipient_ids")
+    if isinstance(recipient_ids, list):
+        action_recipients = [str(recipient) for recipient in recipient_ids]
+    elif contract_class == "email_bulk":
+        action_recipients = [f"demo-{index}@example.invalid" for index in range(recipient_count)]
+    elif contract_class == "crm_write":
+        record_count = len(payload.get("records", [])) or recipient_count
+        action_recipients = [f"demo-record-{index}" for index in range(record_count)]
+    else:
+        action_recipients = []
+
+    args: dict[str, Any] = {}
+    if contract_class == "crm_write":
+        args["record_count"] = len(payload.get("records", [])) or recipient_count
+    if diff_stats is not None:
+        args.update(
+            changed_files=diff_stats["files_changed"],
+            lines_added=diff_stats["lines_added"],
+            lines_deleted=diff_stats["lines_removed"],
+        )
+        files = payload.get("files")
+        if isinstance(files, list):
+            args["files"] = files
+        if diff_stats.get("touches_ci"):
+            args["files"] = [*args.get("files", []), ".github/workflows/demo.yml"]
+        if diff_stats.get("touches_secrets"):
+            args["files"] = [*args.get("files", []), ".env"]
+        if diff_stats.get("adds_dependency"):
+            args["adds_dependency"] = True
+
     action: dict[str, Any] = {
-        "id": str(uuid.uuid4()),
-        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "actor": {"id": actor, "type": "agent", "name": actor.replace("_", " ").title()},
+        "schema_version": "2.0",
+        "action_id": str(uuid.uuid4()),
+        "created_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        "actor": actor,
         "tool": tool,
-        "action_class": action_class,
-        "risk_level_base": risk,
-        "is_dry_run": dry_run,
+        "action_class": contract_class,
+        "args": args,
+        "recipients": action_recipients,
+        "risk_level": risk,
+        "dry_run": dry_run,
         "payload": payload,
     }
-    if recipients is not None:
-        action["recipients"] = recipients
-    if diff_stats is not None:
-        action["diff_stats"] = diff_stats
-    if context is not None:
-        action["context"] = context
+    if contract_class == "pr_action":
+        action["subtype"] = subtypes[action_class]
     return action
 
 
@@ -296,9 +346,9 @@ def validate_action(action: dict[str, Any]) -> None:
 
 def prepare_action(scenario: dict[str, Any], dry_run: bool) -> dict[str, Any]:
     action = json.loads(json.dumps(scenario))
-    action["id"] = str(uuid.uuid4())
-    action["timestamp"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    action["is_dry_run"] = dry_run
+    action["action_id"] = str(uuid.uuid4())
+    action["created_at"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    action["dry_run"] = dry_run
     return action
 
 
@@ -328,7 +378,7 @@ def _wait_for_approval(
 ) -> dict[str, Any]:
     if decision.get("verdict") != "ask" or timeout_seconds <= 0:
         return decision
-    decision_id = decision.get("id")
+    decision_id = decision.get("action_id")
     if not isinstance(decision_id, str):
         raise ValueError("Gateway decision has no decision id.")
     deadline = time.monotonic() + timeout_seconds
@@ -374,7 +424,7 @@ def _execute_allowed_action(
             timeout=10,
         )
         return f"social_http_{response.status}"
-    if action_class == "mass_communication":
+    if action_class == "email_bulk":
         message = EmailMessage()
         message["From"] = "demo-agent@example.invalid"
         message["To"] = "sink-recipient@example.invalid"
@@ -455,11 +505,11 @@ def run_agent(agent_name: str, scenarios: list[dict[str, Any]]) -> int:
                     gateway_url, args.gate_token, decision, args.approval_timeout
                 )
 
-            verdict = decision["verdict"]
-            latency = decision["latency_ms"].get("total_ms", elapsed_ms)
+            verdict = decision.get("verdict") or decision["status"]
+            latency = decision["latency_ms"] or elapsed_ms
             cost = decision["cost_usd"]
             output = (
-                f"{action['timestamp']} | {action['action_class']} | {action['tool']} | "
+                f"{action['created_at']} | {action['action_class']} | {action['tool']} | "
                 f"{verdict} | {latency:.1f} ms | ${cost:.6f}"
             )
             if sys.stdout.isatty() and verdict in VERDICT_COLORS:

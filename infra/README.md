@@ -78,24 +78,46 @@ bash infra/check_hosts.sh
 
 ## Support-service deployment
 
-The deployment helper handles only Persona B's dashboard, simulated world services,
-and agent images; it does not deploy the gateway because that implementation is owned
-by Persona A. It has not been run against the VMs. Before using it, manually provision
-the service's `.env` on the destination host with mode `600`, install Docker Compose,
-and verify SSH aliases:
+The deployment helper supports Persona A's gateway and Persona B's dashboard, simulated
+world services, and agent images. It was run on 2026-10-17 for VM1–VM4: gateway,
+dashboard, and world services are healthy, and VM4's bounded agent dry-run completed.
+Before a fresh deployment, provision each service's own `.env` on the destination host
+with mode `600`, ensure the SSH deployment account owns the file and can write the
+project directory, and verify SSH aliases:
 
 ```bash
+bash infra/deploy_support.sh gateway   # VM1
 bash infra/deploy_support.sh dashboard  # VM2
 bash infra/deploy_support.sh world      # VM3
 bash infra/deploy_support.sh agents     # VM4; builds images only
+bash infra/deploy_support.sh loadtest   # VM6; deploys the bounded runner only
 ```
+
+For VM1, set a unique `GATE_TOKEN`, `TYPESAFE_API_KEY`, `JEV_BASE_URL`, `JEV_MODEL`, and
+private `VM1_BIND_IP` in that host's `.env`. The TypeSafe key is used only for the
+gateway's outbound HTTPS calls and must never be placed on another VM. Keep action data
+synthetic until payload minimization and PII handling are agreed. The gateway binds to
+loopback unless the private bind address is explicitly configured. Its SQLite database
+is persisted in the Compose-managed `gateway_data` volume. The deployment helper checks
+that the destination `.env` is mode `400` or `600`; it never copies environment files or
+secrets.
 
 The helper excludes environment files, database files, local data, and credentials from
 transfer. Agent containers are not started by the helper; they submit requests to the
-gateway and may incur provider usage when manually run. Configure the VM4 `.env` and
-gateway URL, review the exact Compose command printed by the helper, and run it only
-after intentionally approving a test. Keep a separate `.env` on each host, restricted
-to that host's required values.
+gateway and may incur provider usage when manually run. Their bounded `--dry-run`
+completed against real TypeSafe with synthetic actions; no side effects were executed.
+Keep `GITHUB_ENABLE_WRITES=false`. VM5 is a backup-only host with an SFTP-restricted
+`jevbackup` account; backups are created on VM1 and integrity-verified via SFTP download.
+VM6 receives only a bounded baseline runner; provide it a separate mode-600 `.env` with
+the gateway client token after agreeing an estimated spend limit. Never copy the
+TypeSafe API key to VM6.
+
+The deployed stack is a test/demo environment, not a production integration. The
+GitHub relay now creates an Action matching contract v2.0, but webhook delivery from
+GitHub.com and the complete PR-to-dashboard flow have not been verified. A dashboard
+demo can use synthetic examples and does not need GitHub ingress. A publicly viewable
+demo needs an approved HTTPS endpoint/hosting layer and access controls; it does not
+require publishing the private gateway or GitHub relay.
 
 See the full IP-to-role mapping, flow diagram, port policy, per-VM configuration,
 deployment phases, and readiness criteria in

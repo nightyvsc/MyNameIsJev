@@ -15,7 +15,7 @@
     "actor": { "type": "string", "minLength": 1, "description": "Identificador legible del agente, persona o servicio que inicia la llamada." },
     "args": { "type": "object", "description": "Argumentos originales de la tool call; el extractor puede leer aquí conteos y metadatos." },
     "recipients": { "type": "array", "items": { "type": "string" }, "description": "Destinatarios o identificadores de registros afectados. El conteo lo calcula el gateway." },
-    "payload": { "type": "object", "description": "Contenido sintético que evaluará JEV." },
+    "payload": { "type": "object", "description": "Contenido y metadatos normalizados necesarios para evaluar la acción; aplicar minimización antes de enviar a un proveedor externo." },
     "risk_level": { "enum": ["low", "medium", "high", "critical"], "description": "Nivel informado en la entrada por compatibilidad; la política usa el riesgo calculado localmente." },
     "dry_run": { "type": "boolean", "description": "Indica que la acción es una simulación; el veredicto de dry_run se configura en la política." },
     "created_at": { "type": "string", "format": "date-time", "description": "Marca temporal ISO 8601 de creación de la acción." }

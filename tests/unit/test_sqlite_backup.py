@@ -4,8 +4,9 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from scripts.backup_sqlite import create_backup, sha256_file
+from scripts.backup_sqlite import create_backup, sha256_file, upload_backup
 
 
 class SQLiteBackupTests(unittest.TestCase):
@@ -33,6 +34,35 @@ class SQLiteBackupTests(unittest.TestCase):
             self.assertRaises(FileNotFoundError),
         ):
             create_backup(Path(directory) / "missing.sqlite3", Path(directory) / "backups")
+
+    def test_sftp_upload_verifies_a_downloaded_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source.sqlite3"
+            with sqlite3.connect(source) as connection:
+                connection.execute("CREATE TABLE audit (id INTEGER PRIMARY KEY)")
+                connection.execute("INSERT INTO audit DEFAULT VALUES")
+            backup = create_backup(source, root / "backups")
+            identity = root / "identity"
+            known_hosts = root / "known_hosts"
+            identity.touch()
+            known_hosts.touch()
+
+            def fake_sftp_run(command, *, input, text, check):
+                self.assertEqual(command[0], "sftp")
+                self.assertIn("IdentitiesOnly=yes", command)
+                self.assertIn("StrictHostKeyChecking=yes", command)
+                self.assertTrue(text)
+                self.assertTrue(check)
+                lines = input.splitlines()
+                uploaded_path = Path(lines[0].split('"')[1])
+                downloaded_path = Path(lines[1].split('"')[1])
+                downloaded_path.write_bytes(uploaded_path.read_bytes())
+
+            with patch("scripts.backup_sqlite.subprocess.run", side_effect=fake_sftp_run):
+                remote_hash = upload_backup(backup, identity, known_hosts)
+
+            self.assertEqual(remote_hash, sha256_file(backup))
 
 
 if __name__ == "__main__":

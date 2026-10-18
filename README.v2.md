@@ -6,7 +6,7 @@
 
 MyNameIsJev se coloca entre agentes y herramientas de alto impacto: envíos de correo, escrituras en CRM, publicaciones sociales y operaciones sobre pull requests. Antes de ejecutar una tool call, el agente la envía al gateway. El gateway extrae hechos deterministas, evalúa preguntas semánticas tipadas, aplica umbrales configurables y registra el resultado.
 
-El contrato vigente es la versión 2.0. Su fuente de verdad es [docs/contract.md](docs/contract.md), los esquemas están en [docs/schemas/](docs/schemas/) y la API se describe en [contracts/openapi.yaml](contracts/openapi.yaml). El [plan de implementación](implementation_plan.md) contiene la visión y las decisiones de producto; las secciones que describen infraestructura futura no implican que esa infraestructura ya esté desplegada.
+El contrato vigente es la versión 2.0. Su documentación está en [docs/contract.md](docs/contract.md), los esquemas canónicos están en [contracts/schemas/](contracts/schemas/) y sus copias de documentación en [docs/schemas/](docs/schemas/); `docs/validate_contract.py` comprueba que coincidan. La API se describe en [contracts/openapi.yaml](contracts/openapi.yaml). El [plan de implementación](implementation_plan.md) separa lo verificado de lo pendiente y del objetivo futuro.
 
 El contenido previo no compatible se conservó como referencia: [README v0.1](docs/history/README.v0.1.md), [OpenAPI v0.1](contracts/history/v0.1/openapi.yaml), [thresholds v0.1](config/thresholds.v0.1.yaml), [env v0.1](docs/history/.env.example.v0.1) y los esquemas/ejemplos versionados en `contracts/history/` y `contracts/examples/v0.1/`. Los documentos activos de v2.0 añaden la implementación actual sin presentar las interfaces antiguas como runtime vigente.
 
@@ -20,6 +20,7 @@ El contenido previo no compatible se conservó como referencia: [README v0.1](do
 - [Clases, umbrales y preguntas](#clases-umbrales-y-preguntas)
 - [API](#api)
 - [Instalación y ejecución](#instalación-y-ejecución)
+- [Demo público](#demo-público)
 - [Configuración](#configuración)
 - [Dataset y evaluación](#dataset-y-evaluación)
 - [Infraestructura objetivo](#infraestructura-objetivo)
@@ -29,11 +30,11 @@ El contenido previo no compatible se conservó como referencia: [README v0.1](do
 
 ## Problema y alcance
 
-Los agentes autónomos pueden ejecutar acciones equivocadas: enviar una campaña a demasiados destinatarios, alterar muchos registros, publicar contenido engañoso o subir cambios peligrosos a `main`. El gate intercepta estas acciones y devuelve uno de tres veredictos: `allow`, `ask` o `deny`.
+Los agentes autónomos pueden ejecutar acciones equivocadas: enviar una campaña a demasiados destinatarios, alterar muchos registros, publicar contenido engañoso o subir cambios peligrosos a `main`. El gate intercepta estas acciones y devuelve `allow`, `ask` o `deny`; si Jev no está disponible, las retiene como `pending`.
 
 JEV se usa para juicios semánticos con preguntas tipadas (`boolean`, `choice`, `score`). El código local realiza las tareas deterministas que no se delegan al modelo: conteos, comparación con umbrales, detección de patrones PII y lectura de metadatos del diff. La política combina ambas señales.
 
-El contrato define datos sintéticos. El adaptador de JEV no presupone un formato HTTP que todavía no se ha documentado; la integración real requiere la documentación oficial o un ejemplo válido de request y response.
+La integración Jev real se ha probado con acciones sintéticas desde el gateway. El proyecto aún usa simuladores para correo, CRM y social, y no ejecuta efectos productivos. El relay GitHub genera una Action v2 validada localmente; no se ha probado la llegada de webhooks desde GitHub.com ni el flujo completo con un repositorio.
 
 ## Arquitectura
 
@@ -62,12 +63,15 @@ Una resolución humana de `ask` cambia la decisión a `allow` o `deny` y genera 
 
 ## Estado actual
 
-- **A1–A7:** interceptor, extractor, interfaz/cliente JEV con transporte inyectable, preguntas por clase, política, cola de aprobación y auditoría/métricas implementados.
+- **Gateway:** desplegado en VM1, protegido por `X-Gate-Token`, conectado con Jev real y con SQLite persistente. Se probaron decisiones sintéticas, auditoría y rutas de aprobación.
+- **Dashboard:** consola operativa desplegada en VM2 e integrada con `/decisions`, `/approvals`, `/metrics` y resolución de aprobaciones. No se debe exponer sin autenticación/roles. El demo público read-only ya está implementado en `dashboard/demo_app.py`, con ejemplos sintéticos y sin conexión al gateway; falta publicarlo desde una cuenta administradora en Streamlit Community Cloud.
+- **VM3/VM4:** servicios CRM, SMTP sink, social y relay simulados en VM3; agentes sintéticos en VM4. No se enviaron correos reales, publicaciones reales ni escrituras de repositorio.
+- **VM5/VM6:** backup manual de SQLite con verificación y restore-check en VM5; VM6 ejecutó lotes de 10 decisiones reales Jev con concurrencia 1 y 5. Esas pequeñas muestras no determinan capacidad sostenida.
+- **GitHub:** mapeo del relay a Action v2 cubierto por prueba local; `GITHUB_ENABLE_WRITES=false` y sin ingress de webhook GitHub.com. No hay merge automático.
 - **A8:** dataset sintético JSONL generado y validable en `eval/data/actions.jsonl`.
 - **A9:** evaluación reproducible en `eval/run_eval.py`; el reporte guardado es `eval/report.json`.
-- La implementación HTTP real de JEV no está conectada. Si no se inyecta un transporte, el gateway devuelve `pending` al fallar JEV y no autoriza ejecución.
-- `MockJev` sirve para pruebas y evaluación local. Los resultados con el mock miden coherencia entre las etiquetas sintéticas y las reglas, no la calidad de JEV ni la generalización a tráfico real.
-- El dashboard, las VMs, los simuladores de mundo y el despliegue con GitHub real aparecen como trabajo de integración/infraestructura en el plan, pero no forman parte del runtime presente en este repositorio.
+- `MockJev` se limita a pruebas locales. Sus resultados no miden la calidad de Jev real ni la generalización a datos productivos.
+- El entorno actual es de integración/demo, no un servicio productivo: faltan la publicación del demo en Community Cloud, revisión de ACL/firewalls, operación automatizada de backups y pruebas end-to-end con proveedores externos.
 
 ## Estructura del repositorio
 
@@ -76,16 +80,16 @@ MyNameIsJev/
 ├── contracts/
 │   ├── examples/              # Ejemplos v0.1 conservados y algunos agregados v2.0
 │   ├── history/v0.1/          # Contratos anteriores conservados
-│   ├── schemas/               # Copias de contrato; OpenAPI referencia docs/schemas/
+│   ├── schemas/               # Esquemas canónicos v2.0
 │   └── openapi.yaml           # API OpenAPI 3.1
 ├── config/
 │   ├── thresholds.yaml        # Propuesta original con enlace a v2.0
 │   ├── thresholds.v2.yaml     # Espejo YAML v2.0; runtime usa docs/policy.defaults.json
 │   └── questions/             # Preguntas anteriores conservadas como referencia
 ├── docs/
-│   ├── contract.md            # Fuente de verdad del contrato v2.0
+│   ├── contract.md            # Explicación del contrato v2.0
 │   ├── history/               # README y env anteriores conservados
-│   ├── schemas/               # JSON Schema Draft 2020-12
+│   ├── schemas/               # Copias sincronizadas; OpenAPI las referencia
 │   ├── examples/              # Casos válidos e inválidos
 │   ├── policy.defaults.json   # Umbrales y opciones de runtime
 │   ├── jev_questions.json     # Preguntas tipadas por clase
@@ -168,13 +172,14 @@ La especificación completa está en [contracts/openapi.yaml](contracts/openapi.
 | Método | Ruta | Función |
 |---|---|---|
 | `POST` | `/gate` | Valida y evalúa una `Action`; persiste el resultado. |
+| `GET` | `/gate/{action_id}` | Consulta el estado actual de una decisión para que el agente reanude un `ask` resuelto. |
 | `GET` | `/decisions?limit=N` | Lista decisiones recientes; `limit` acepta 1–1000, default 100. |
 | `GET` | `/approvals?status=pending` | Lista aprobaciones por estado. |
 | `POST` | `/gate/{action_id}/approve` | Resuelve la aprobación como `approved` o `rejected`. |
 | `GET` | `/metrics` | Devuelve latencia, costo, tasas y conteos por clase en JSON. |
-| `GET` | `/health` | Informa estado del proceso, versión y si JEV tiene transporte configurado. |
+| `GET` | `/health` | Informa estado del proceso, versión y si JEV y autenticación están configurados. |
 
-Respuestas relevantes: `422` para entradas inválidas, `404` para acción/aprobación inexistente, `409` si la aprobación ya está resuelta, y `503` si no se puede persistir en auditoría. Un fallo de JEV se representa como `200` con estado `pending`, no como error HTTP. `/health` no comprueba conectividad remota con JEV. El gateway actual no aplica autenticación y no expone rutas antiguas como `/queue`, `/audit/log` o `/audit/metrics`.
+Todas las rutas excepto `/health` requieren `X-Gate-Token`; un token incorrecto devuelve `401` y si el gateway no tiene token configurado responde `503` sin procesar la solicitud. Las respuestas relevantes incluyen `422` para entradas inválidas, `404` para acción/aprobación inexistente, `409` si la aprobación ya está resuelta y `503` si no se puede persistir la auditoría. Un fallo de JEV se representa como `200` con estado `pending`, no como error HTTP. `/health` no comprueba conectividad remota con JEV. Las rutas canónicas son las listadas arriba; el dashboard usa esas rutas y no accede directamente a SQLite.
 
 ## Instalación y ejecución
 
@@ -182,6 +187,7 @@ Requiere Python 3.11 o posterior.
 
 ```bash
 python -m pip install -e ".[dev]"
+export GATE_TOKEN='<token-local-de-desarrollo>'
 python -m uvicorn jev_gate.gateway.main:app --app-dir src --reload --port 8000
 ```
 
@@ -191,17 +197,54 @@ Ejemplo mínimo de `POST /gate`:
 
 ```bash
 curl -X POST http://localhost:8000/gate \
+  -H "X-Gate-Token: $GATE_TOKEN" \
   -H "Content-Type: application/json" \
   -d @contracts/examples/action_email_bulk.json
 ```
 
-No se requiere una credencial para la implementación actual del gateway. La variable de API key en `.env.example` es un marcador para una futura integración basada en la documentación oficial; no agregues credenciales reales al repositorio.
+En producción, guarda `GATE_TOKEN` en un `.env` por host con permisos restrictivos; no pongas secretos en el repositorio ni copies el `.env` local completo a las VMs. El token del gateway no es la clave de TypeSafe.
+
+Para construir y ejecutar el contenedor local, configura `GATE_TOKEN` en un `.env` local restringido y usa:
+
+```bash
+docker compose --env-file .env -f infra/gateway-compose.yml up --build
+```
+
+El contenedor conserva SQLite en el volumen `gateway_data`; la publicación queda en loopback por defecto. En VM1 se debe configurar `VM1_BIND_IP` con la IP privada después de validar firewall y routing.
+
+## Demo público
+
+El demo desplegable es [dashboard/demo_app.py](dashboard/demo_app.py), una app
+independiente de la consola operativa. Presenta escenarios sintéticos de reglas y una
+instantánea identificada de las pruebas de integración. No llama al gateway ni a Jev,
+no usa secretos y no ejecuta efectos externos. Los resultados de los escenarios son
+ilustrativos, no decisiones en vivo.
+
+Para probarlo localmente:
+
+```bash
+python -m pip install -r requirements.txt
+streamlit run dashboard/demo_app.py
+```
+
+La opción gratuita más directa para publicarlo es
+[Streamlit Community Cloud](https://streamlit.io/cloud): conecta el repositorio
+público `nightyvsc/MyNameIsJev`, elige la rama `main` y `dashboard/demo_app.py` como
+archivo principal. Usa el `requirements.txt` de la raíz, no configures secretos y
+confirma que la app esté pública antes de compartir su URL `*.streamlit.app`. La
+publicación requiere una cuenta con permisos administrativos del repositorio; el
+despliegue todavía debe iniciarse desde esa cuenta. Consulta los pasos detallados en
+[dashboard/README.md](dashboard/README.md).
+
+No publiques [dashboard/app.py](dashboard/app.py): es la consola operativa y requiere
+un token con capacidad de resolver aprobaciones. La demo pública no necesita que VM1,
+VM2 o cualquier otra VM sea accesible desde Internet.
 
 ## Configuración
 
 La política canónica de runtime vive en [docs/policy.defaults.json](docs/policy.defaults.json). Incluye umbrales numéricos, umbrales probabilísticos, TTL, timeout, reintentos, backoff y precio de entrada usado para estimar costo. [config/thresholds.v2.yaml](config/thresholds.v2.yaml) vuelve a incluir estas reglas en YAML legible; es un espejo documental, no una fuente cargada por el gateway. Las preguntas canónicas viven en [docs/jev_questions.json](docs/jev_questions.json); los YAML previos se preservan en `config/questions/` y no se cargan en runtime.
 
-Valores JEV por defecto: timeout 500 ms, dos reintentos, backoff exponencial de 100 ms inicial, TTL de `pending` 300 s y precio de entrada de 0.042 USD por millón de tokens. El TTL de aprobación es 3600 s. Todos son configurables; el costo es estimado y no se factura desde el gateway.
+Valores JEV por defecto: timeout 500 ms, dos reintentos, backoff exponencial de 100 ms inicial, TTL de `pending` 300 s y precio de entrada configurado por millón de tokens. El TTL de aprobación es 3600 s. Todos son configurables; el costo es estimado y no se factura desde el gateway.
 
 Variables de entorno disponibles:
 
@@ -209,7 +252,7 @@ Variables de entorno disponibles:
 |---|---|---|
 | `PORT` | `8000` | Puerto HTTP de FastAPI. |
 | `JEV_GATE_DB` | `jev_gate.sqlite3` | Archivo SQLite de auditoría. |
-| `TYPESAFE_API_KEY` | marcador en `.env.example` | Reservada para el adaptador oficial de JEV; todavía no conecta un transporte. |
+| `TYPESAFE_API_KEY` | sin valor por defecto | Credencial del transporte TypeSafe real; solo en el `.env` privado de VM1. |
 
 ## Dataset y evaluación
 
@@ -225,20 +268,27 @@ Los casos son sintéticos, JSONL y se validan contra el contrato. Revisa [eval/r
 
 El reporte actual se basa en reglas y `MockJev`; su concordancia con las etiquetas del dataset no mide el desempeño del JEV real. Las metas del plan —falsos positivos ≤10%, costo medio ≤$0.001, recall de peligrosas ≥85% y latencia p95 <800 ms— son objetivos por medir, no resultados garantizados por este README.
 
-## Infraestructura objetivo
+## Infraestructura actual y demo
 
-El plan contempla ocho VMs en una LAN con acceso a internet. Es una topología objetivo, no un despliegue contenido en este repositorio:
+La integración de prueba usa seis VMs privadas. Los servicios desplegados y sus
+restricciones se describen en [infra/DEPLOYMENT_PLAN.md](infra/DEPLOYMENT_PLAN.md).
+Un demo del dashboard no necesita GitHub ni una IP pública asignada a estas VMs. Para
+acceso público sí se necesita una URL HTTPS a través de un proveedor de hosting/proxy o
+ingress aprobado, pero debe exponerse una vista de demo read-only con datos sintéticos;
+no el gateway, la auditoría real ni las funciones operativas de aprobación.
 
 | VM | Rol planeado | Sistema sugerido |
 |---|---|---|
-| VM1 | Gateway y política | Ubuntu |
-| VM2 | Dashboard y observabilidad | Ubuntu |
-| VM3 | CRM/mail/social simulados y relay de webhook | Ubuntu |
-| VM4 | Agentes simulados | Ubuntu o Rocky Linux |
-| VM5 | Base de auditoría para producción | Rocky Linux |
-| VM6–VM8 | Reserva para escala, CI y desarrollo | — |
+| VM1 | Gateway y SQLite local | Ubuntu |
+| VM2 | Dashboard | Ubuntu |
+| VM3 | CRM/mail/social simulados y relay GitHub | Ubuntu |
+| VM4 | Agentes sintéticos | Ubuntu |
+| VM5 | Copias de backup SQLite; no DB activa | Rocky Linux |
+| VM6 | Pruebas acotadas/CI bajo demanda | Rocky Linux |
 
-La persistencia implementada actualmente es SQLite. No hay scripts de aprovisionamiento, dashboard ni mundo simulado desplegable en este repo. El plan difiere la demo y el playbook a una fase posterior.
+La persistencia actual es SQLite local en VM1; VM5 almacena copias, no aloja base activa.
+No hay alta disponibilidad ni ejecución de efectos reales. Un dashboard visible no implica
+que el backend esté preparado para producción.
 
 ## Desarrollo y validación
 

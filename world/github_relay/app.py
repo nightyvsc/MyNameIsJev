@@ -3,10 +3,14 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import uuid
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request
+
+from jev_gate.models.contracts import Action, Decision
 
 
 def _allowed_repositories() -> set[str]:
@@ -20,70 +24,50 @@ def _allowed_repositories() -> set[str]:
 def _make_action(
     repository: str, pull: dict[str, Any], files: list[dict[str, Any]]
 ) -> dict[str, Any]:
-    import uuid
-    from datetime import datetime, timezone
-
-    changed_paths = [str(item.get("filename", "")) for item in files]
+    changed_paths = [
+        str(item["filename"])
+        for item in files
+        if isinstance(item.get("filename"), str) and item["filename"]
+    ]
     full_patch_text = "\n".join(
         str(item.get("patch", "")) for item in files if isinstance(item.get("patch"), str)
     )
     patch_text = full_patch_text[:30_000]
-    pr_number = pull.get("number")
+    pr_number = pull["number"]
     title = str(pull.get("title", ""))
-    return {
-        "id": str(uuid.uuid4()),
-        "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "actor": {
-            "id": str((pull.get("user") or {}).get("id", "github-webhook")),
-            "type": "service",
-            "name": "github-webhook-relay",
-        },
-        "tool": "merge_pull_request",
-        "action_class": "repo_merge",
-        "risk_level_base": "medium",
-        "is_dry_run": os.environ.get("GITHUB_ENABLE_WRITES", "").lower() != "true",
-        "diff_stats": {
-            "files_changed": int(pull.get("changed_files") or len(files)),
+    user = pull.get("user") or {}
+    actor_name = user.get("login") or user.get("id") or "github-webhook-relay"
+    action = Action(
+        schema_version="2.0",
+        action_id=uuid.uuid4(),
+        action_class="pr_action",
+        subtype="merge",
+        tool="github.evaluate_pull_request",
+        actor=f"github:{actor_name}",
+        args={
+            "changed_files": int(pull.get("changed_files") or len(changed_paths)),
             "lines_added": int(pull.get("additions") or 0),
-            "lines_removed": int(pull.get("deletions") or 0),
-            "touches_ci": any(
-                path.startswith((".github/", ".gitlab/"))
-                or path in (".gitlab-ci.yml", "Jenkinsfile")
-                for path in changed_paths
-            ),
-            "touches_secrets": any(
-                any(part in path.lower() for part in (".env", "secret", ".pem", ".key"))
-                for path in changed_paths
-            ),
-            "adds_dependency": any(
-                path.endswith(
-                    (
-                        "requirements.txt",
-                        "pyproject.toml",
-                        "package.json",
-                        "Cargo.toml",
-                        "go.mod",
-                    )
-                )
-                for path in changed_paths
-            ),
-            "target_branch": str((pull.get("base") or {}).get("ref", "")),
+            "lines_deleted": int(pull.get("deletions") or 0),
+            "files": changed_paths,
         },
-        "payload": {
-            "repo": repository,
-            "pull_number": pr_number,
+        recipients=[],
+        payload={
+            "repository": repository,
+            "pull_request_number": pr_number,
             "title": title,
             "body": str(pull.get("body") or ""),
             "diff": patch_text,
             "changed_paths": changed_paths,
-        },
-        "context": {
-            "pr_title": title,
-            "pr_url": str(pull.get("html_url", "")),
+            "base_branch": str((pull.get("base") or {}).get("ref", "")),
             "head_branch": str((pull.get("head") or {}).get("ref", "")),
+            "pull_request_url": str(pull.get("html_url", "")),
             "diff_truncated": len(full_patch_text) > len(patch_text),
         },
-    }
+        risk_level="medium",
+        dry_run=False,
+        created_at=datetime.now(timezone.utc),  # noqa: UP017
+    )
+    return action.model_dump(mode="json", exclude_none=True)
 
 
 async def _list_pull_request_files(
@@ -173,11 +157,16 @@ def create_app() -> FastAPI:
         except ValueError as error:
             raise HTTPException(status_code=400, detail="Invalid JSON payload.") from error
 
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Invalid webhook JSON object.")
         action_name = payload.get("action")
         if action_name not in {"opened", "synchronize", "reopened"}:
             return {"status": "ignored", "reason": "Pull request action is not evaluated."}
 
-        repository = str((payload.get("repository") or {}).get("full_name", ""))
+        repository_data = payload.get("repository")
+        if not isinstance(repository_data, dict):
+            raise HTTPException(status_code=400, detail="Missing repository details.")
+        repository = str(repository_data.get("full_name", ""))
         allowed = _allowed_repositories()
         if not repository or repository not in allowed:
             raise HTTPException(
@@ -185,7 +174,12 @@ def create_app() -> FastAPI:
             )
 
         pull = payload.get("pull_request")
-        if not isinstance(pull, dict) or not isinstance(pull.get("number"), int):
+        if (
+            not isinstance(pull, dict)
+            or not isinstance(pull.get("number"), int)
+            or isinstance(pull.get("number"), bool)
+            or pull["number"] < 1
+        ):
             raise HTTPException(status_code=400, detail="Missing pull request details.")
         gate_base_url = os.environ.get("GATEWAY_BASE_URL")
         gate_token = os.environ.get("GATE_TOKEN")
@@ -217,23 +211,27 @@ def create_app() -> FastAPI:
                 json=action,
                 headers={"X-Gate-Token": gate_token},
             )
-            if gate_response.status_code not in (200, 503):
+            if gate_response.status_code != 200:
                 raise HTTPException(
                     status_code=502,
                     detail=f"Gateway returned HTTP {gate_response.status_code}.",
                 )
             try:
-                decision = gate_response.json()
-            except ValueError as error:
+                decision = Decision.model_validate(gate_response.json())
+            except (ValueError, TypeError) as error:
                 raise HTTPException(
-                    status_code=502, detail="Gateway returned invalid JSON."
+                    status_code=502, detail="Gateway returned an invalid Decision."
                 ) from error
 
-            decision_id = decision.get("id")
-            verdict = decision.get("verdict")
+            decision_id = str(decision.action_id)
+            verdict = decision.verdict.value if decision.verdict is not None else None
             writes_enabled = os.environ.get("GITHUB_ENABLE_WRITES", "").lower() == "true"
             github_write_result = "disabled"
-            if writes_enabled and verdict in {"allow", "ask", "deny"}:
+            if (
+                writes_enabled
+                and decision.status.value == "decided"
+                and verdict in {"allow", "ask", "deny"}
+            ):
                 if verdict == "allow":
                     review_payload = {
                         "event": "APPROVE",

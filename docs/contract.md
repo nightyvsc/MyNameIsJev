@@ -1,6 +1,10 @@
 # Contrato del gate (v2.0)
 
-Fuente de verdad para `gate/`, `sim/` y `eval/`. Se sube a v2.0 porque cambia de forma incompatible el modelo de fallo, los umbrales y los campos del contrato v1.0. Los datos de prueba son sintéticos y usan `@ejemplo.test`.
+Contrato compartido v2.0 para `gate/`, los simuladores, agentes y adaptadores. Los
+esquemas fuente están en `contracts/schemas/`; las copias publicadas en
+`docs/schemas/` deben mantenerse idénticas. `python docs/validate_contract.py` valida
+ejemplos y comprueba esa igualdad. Los ejemplos de prueba usan datos ficticios; los
+adaptadores productivos deben minimizar y clasificar cualquier dato enviado a JEV.
 
 ## Flujo
 
@@ -10,11 +14,31 @@ Agente/webhook -> Action -> extractor determinista -> JEV (preguntas tipadas en 
   -> auditoría append-only -> cola humana si ask
 ```
 
-El código cuenta, compara y detecta patrones (PII, diff, destinatarios, registros, flags). JEV evalúa juicios semánticos. El motor aplica umbrales deterministas a sus respuestas; no hay árbitro de modelo local ni explicación en el camino crítico. La integración con GitHub puede convertir el veredicto en review/comentario, según la acción.
+El código cuenta, compara y detecta patrones (PII, diff, destinatarios, registros,
+flags). JEV evalúa juicios semánticos. El motor aplica umbrales deterministas a sus
+respuestas; no hay árbitro de modelo local ni explicación en el camino crítico. El
+adaptador GitHub genera una Action v2 y remite su decisión; las escrituras a GitHub
+siguen desactivadas por defecto. El contrato no autoriza ni ejecuta un merge.
 
 ## Action
 
-`docs/schemas/action.schema.json` define `schema_version: "2.0"`, `action_id` (UUID), `action_class`, `tool`, `args`, `actor`, `recipients`, `payload`, `risk_level`, `dry_run` y `created_at`. `subtype` es obligatorio solo para `pr_action`: `merge`, `approve`, `push_main`, `touch_ci`, `touch_secrets`, `add_dependency`, `delete_files`. `payload` es objeto con el contenido a evaluar; `args` contiene parámetros de ejecución. `risk_level` es calculado por el extractor (`low|medium|high|critical`), no se confía en una etiqueta declarada por el agente. `recipients` es lista de destinatarios o identificadores afectados; el extractor cuenta los elementos relevantes.
+`contracts/schemas/action.schema.json` define `schema_version: "2.0"`, `action_id`
+(UUID), `action_class`, `tool`, `args`, `actor`, `recipients`, `payload`, `risk_level`,
+`dry_run` y `created_at`. `subtype` es obligatorio solo para `pr_action`: `merge`,
+`approve`, `push_main`, `touch_ci`, `touch_secrets`, `add_dependency`, `delete_files`.
+`payload` contiene el contexto necesario para la evaluación; `args` contiene los
+argumentos/metadatos estructurados de la tool call. `risk_level` es una etiqueta de
+entrada por compatibilidad: no se confía en ella; el extractor calcula el riesgo
+(`low|medium|high|critical`). `recipients` es una lista de destinatarios o
+identificadores afectados; el extractor cuenta los elementos relevantes.
+
+Para GitHub, el relay mapea cada PR a `action_class: pr_action`, `subtype: merge`,
+`tool: github.evaluate_pull_request`, `actor` como texto, conteos y rutas bajo `args`,
+metadatos/diff truncado bajo `payload`, y `dry_run: false` para aplicar la política
+normal. `GITHUB_ENABLE_WRITES` es un control independiente: desactivado, el relay no
+envía reviews ni comentarios, incluso si el gateway decide `allow`. La Action se valida
+con JSON Schema y Pydantic en las pruebas locales; esto no prueba la entrega real de
+webhooks o el recorrido end-to-end.
 
 Clases: `email_bulk`, `crm_write`, `social_post`, `pr_action`.
 
@@ -39,9 +63,11 @@ Los límites se interpretan literalmente como indica cada fila; N=10 pertenece a
 
 ## Decisión y fallo de JEV
 
-`Decision` incluye `action_id`, veredicto, razones, features, respuestas JEV, fuente, latencia/costo y timestamp. Si JEV falla o expira el timeout, se aplica **do-nothing**: la acción queda `pending` durante el TTL configurado y no se ejecuta ni se bloquea. Puede reintentarse la evaluación mientras siga vigente. Al expirar el TTL, permanece sin ejecutar y se registra como `expired`; nunca se convierte silenciosamente en allow/deny. `pending` y `expired` son estados de procesamiento, no veredictos finales.
+`Decision` incluye `action_id`, veredicto, razones, features, respuestas JEV, modelo y tokens informados por el proveedor, fuente, latencia/costo y timestamp. El costo se calcula con los tokens de entrada reportados y la tarifa configurada. Si JEV falla o expira el timeout, se aplica **do-nothing**: la acción queda `pending` durante el TTL configurado y no se ejecuta ni se bloquea. Puede reintentarse la evaluación mientras siga vigente. Al expirar el TTL, permanece sin ejecutar y se registra como `expired`; nunca se convierte silenciosamente en allow/deny. `pending` y `expired` son estados de procesamiento, no veredictos finales.
 
-El mock de JEV se permite solo en tests locales. No simula una integración real en despliegue. El cliente real permanece detrás de una interfaz y no se inventa el formato HTTP de JEV; se fija cuando se disponga de documentación oficial/ejemplo de request y response.
+El transporte de producción usa `POST https://api.typesafe.ai/v1/systemone` con autenticación Bearer y preguntas tipadas `noul`, `choice` y `score`. La clave `TYPESAFE_API_KEY` solo debe estar en el `.env` restringido de VM1; es distinta de `GATE_TOKEN`, que autentica las llamadas entrantes al gateway. El cliente traduce las respuestas del proveedor al mapa de probabilidades que consume la política. El mock se permite solo en tests locales y no sustituye las pruebas reales de integración.
+
+Las acciones enviadas al proveedor incluyen contenido/argumentos de la acción y características derivadas. Hasta acordar minimización de datos y tratamiento de PII, usar únicamente datos sintéticos; no enviar payloads reales o secretos.
 
 ## Approval
 
@@ -49,7 +75,10 @@ Una decisión `ask` crea una entrada `Approval` con `status: pending`. Una resol
 
 ## Esquemas y ejemplos
 
-JSON Schema Draft 2020-12: `docs/schemas/action.schema.json`, `decision.schema.json`, `approval.schema.json`. Configuración: `docs/policy.defaults.json` y `docs/jev_questions.json`. Ejemplos positivos y negativos en `docs/examples/`. Validación: `python docs/validate_contract.py` (requiere `jsonschema`).
+JSON Schema Draft 2020-12: fuente en `contracts/schemas/`; copias para documentación y
+OpenAPI en `docs/schemas/`. Configuración: `docs/policy.defaults.json` y
+`docs/jev_questions.json`. Ejemplos positivos y negativos en `docs/examples/`.
+Validación: `python docs/validate_contract.py` (requiere `jsonschema`).
 
 ## Endpoints
 
@@ -66,6 +95,15 @@ JSON Schema Draft 2020-12: `docs/schemas/action.schema.json`, `decision.schema.j
 ## Registro de auditoría
 
 Cada acción y resultado se registra de forma append-only con veredicto/estado, razones, probabilidades, latencia JEV, costo estimado y timestamp. SQLite en desarrollo; Postgres en producción. Las métricas incluyen p50/p95, costo acumulado y tasa de bloqueo.
+
+## MCP y conectores
+
+MCP no es requisito para integrar correo, CRM, redes sociales o GitHub. Un conector puede
+usar directamente una API/SDK y llamar al gateway antes del efecto. Si se expone como
+herramienta MCP, el servidor/cliente MCP debe conservar el mismo orden: normalizar la
+tool call a `Action`, obtener una decisión válida y ejecutar el efecto solo tras una
+autorización explícita. MCP por sí mismo no implementa autorización, aprobación ni
+políticas del gate.
 
 ## Evolución
 

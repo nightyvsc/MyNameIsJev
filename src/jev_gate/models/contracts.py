@@ -69,6 +69,8 @@ class JEVAnswer(BaseModel):
     model_config = ConfigDict(extra="forbid")
     type: str
     probs: dict[str, float]
+    value: str | float | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
 
 
 class Decision(BaseModel):
@@ -83,6 +85,9 @@ class Decision(BaseModel):
     source: str = "jev"
     latency_ms: float = Field(ge=0)
     cost_usd: float = Field(ge=0)
+    provider_model: str | None = None
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
     decided_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     def model_post_init(self, __context: Any) -> None:

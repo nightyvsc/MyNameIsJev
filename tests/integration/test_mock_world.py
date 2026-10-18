@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import smtplib
 import socket
 import tempfile
@@ -9,11 +10,15 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from jsonschema import Draft202012Validator, FormatChecker
 from world.crm.app import create_app as create_crm_app
 from world.github_relay.app import _make_action
 from world.github_relay.app import create_app as create_relay_app
 from world.mail.app import create_app as create_mail_app
 from world.social.app import create_app as create_social_app
+
+from jev_gate.extractor.deterministic import extract_features
+from jev_gate.models.contracts import Action
 
 
 def free_tcp_port() -> int:
@@ -114,19 +119,38 @@ class MockWorldIntegrationTests(unittest.TestCase):
             "base": {"ref": "main"},
             "head": {"ref": "feature"},
         }
-        action = _make_action(
-            "demo/repository",
-            pull,
-            [
-                {"filename": ".github/workflows/test.yml", "patch": "+name: test"},
-                {"filename": "pyproject.toml", "patch": "+added-dependency"},
-            ],
+        with patch.dict("os.environ", {"GITHUB_ENABLE_WRITES": "true"}):
+            action = _make_action(
+                "demo/repository",
+                pull,
+                [
+                    {"filename": ".github/workflows/test.yml", "patch": "+name: test"},
+                    {"filename": "pyproject.toml", "patch": "+added-dependency"},
+                ],
+            )
+        schema_path = (
+            Path(__file__).resolve().parents[2] / "contracts/schemas/action.schema.json"
         )
-        self.assertEqual(action["action_class"], "repo_merge")
-        self.assertTrue(action["diff_stats"]["touches_ci"])
-        self.assertTrue(action["diff_stats"]["adds_dependency"])
-        self.assertEqual(action["diff_stats"]["files_changed"], 2)
-        self.assertFalse(action["context"]["diff_truncated"])
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        Draft202012Validator(schema, format_checker=FormatChecker()).validate(action)
+        validated_action = Action.model_validate(action)
+        features = extract_features(validated_action)
+        self.assertEqual(action["schema_version"], "2.0")
+        self.assertEqual(action["action_class"], "pr_action")
+        self.assertEqual(action["subtype"], "merge")
+        self.assertEqual(action["actor"], "github:123")
+        self.assertEqual(action["args"]["changed_files"], 2)
+        self.assertEqual(
+            action["args"]["files"],
+            [".github/workflows/test.yml", "pyproject.toml"],
+        )
+        self.assertEqual(validated_action.action_class.value, "pr_action")
+        self.assertFalse(action["dry_run"])
+        self.assertEqual(action["payload"]["repository"], "demo/repository")
+        self.assertEqual(action["payload"]["pull_request_number"], 12)
+        self.assertFalse(action["payload"]["diff_truncated"])
+        self.assertTrue(features["touches_ci"])
+        self.assertTrue(features["adds_dependency"])
 
     def test_github_action_marks_truncated_diffs(self) -> None:
         action = _make_action(
@@ -134,7 +158,7 @@ class MockWorldIntegrationTests(unittest.TestCase):
             {"number": 13, "changed_files": 1},
             [{"filename": "large.diff", "patch": "x" * 30_001}],
         )
-        self.assertTrue(action["context"]["diff_truncated"])
+        self.assertTrue(action["payload"]["diff_truncated"])
         self.assertLessEqual(len(action["payload"]["diff"]), 30_000)
 
 
