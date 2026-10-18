@@ -3,7 +3,7 @@ name = "jev-gate"
 version = "0.1.0"
 description = "AI Safety Gate — JEV-powered action interception and policy enforcement"
 readme = "README.md"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 requires-python = ">=3.11"
 
 dependencies = [

@@ -124,8 +124,9 @@ MyNameIsJev/
 ├── dashboard/                  # Web dashboard (VM2) — live verdicts, approval queue
 ├── world/                      # Simulated world (VM3) — fake CRM, mail sink, social API
 ├── infra/                      # VM provisioning scripts, docker-compose, SSH config
-├── data/
-│   └── datasets/               # Labeled action datasets for gate evaluation (JSONL)
+├── eval/                       # Dataset and tools for gate evaluation
+│   └── data/
+│       └── actions.jsonl
 ├── scripts/                    # Dev utilities, dataset generation, benchmarks
 ├── docs/                       # Extended documentation
 │
@@ -371,7 +372,7 @@ for their runbooks. The support deployment scripts have not been run against the
 
 ```bash
 # 1. Clone and enter the repo
-git clone https://github.com/your-org/MyNameIsJev.git
+git clone https://github.com/nightyvsc/MyNameIsJev.git
 cd MyNameIsJev
 
 # 2. Set up environment
@@ -473,4 +474,9 @@ Prometheus-compatible metrics are also exposed at `/metrics` for scraping by VM2
 
 ## License
 
-MIT
+See [LICENSE](LICENSE). Until October 18, 2029, the project is distributed
+under the Business Source License 1.1: commercial use requires a prior
+commercial license and payment of the agreed fee. From that date, covered
+versions move to GPL-2.0-or-later, which permits commercial use without
+payment but requires compliance with its terms when distributing the program
+or modified versions.

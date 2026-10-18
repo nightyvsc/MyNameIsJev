@@ -1,8 +1,7 @@
 # Archivo de versiones anteriores
 
-Los snapshots v0.1 conservan el contenido anterior a la implementación Persona A. Se mantienen para comparar y recuperar contexto; no describen el contrato ni el runtime v2.0.
+Los snapshots v0.1 conservan configuraciones y contratos anteriores a la implementación Persona A; no describen el contrato ni el runtime v2.0. El README v0.1 no se conserva por separado para evitar duplicar la documentación general vigente en [`../../README.md`](../../README.md).
 
-- `README.v0.1.md`: README original del repositorio.
 - `../.env.example.v0.1`: variables propuestas inicialmente.
 - `../../contracts/history/v0.1/openapi.yaml`: API propuesta anterior, con rutas y autenticación aún no implementadas.
 - `../../contracts/history/v0.1/schemas/`: esquemas v0.1 originales.
