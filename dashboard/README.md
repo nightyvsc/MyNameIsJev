@@ -1,67 +1,43 @@
-# Streamlit Dashboard
+# Jev Safety Gate — Demo web interactiva
 
-The dashboard is hosted on VM2 and communicates only with the gateway HTTP API on VM1.
-It never opens, mounts, or writes the gateway's SQLite file.
+Demo interactiva del gate de seguridad: cada acción de un agente AI se evalúa
+con la política (espejo determinista de `config/thresholds.yaml` y
+`docs/policy.defaults.json`) y recibe un veredicto **allow / ask / deny / pending**.
 
-## Public read-only demo
+Es una app 100 % frontend (React + Vite + Tailwind v4 + Recharts), sin backend
+ni credenciales: todos los datos son sintéticos.
 
-The public demo is a separate entrypoint: `dashboard/demo_app.py`. It displays a
-fixed integration-test snapshot and hand-authored example scenarios. It does not
-import the operational dashboard, read environment secrets, call Jev, contact the
-gateway, or execute external actions. Its example decisions are illustrative; only
-the explicitly labeled integration-test snapshot describes observed test results.
-
-Run it locally without gateway configuration:
+## Desarrollo
 
 ```bash
-python -m pip install -r requirements.txt
-streamlit run dashboard/demo_app.py
+cd dashboard/web
+npm install
+npm run dev        # http://localhost:5173
 ```
 
-### Deploy on Streamlit Community Cloud
-
-The repository is public, so Streamlit Community Cloud is the simplest free option
-for a shareable demo URL. It does not expose the private VMs and requires no public IP
-for them. Free-tier availability and limits may change.
-
-1. Sign in at [share.streamlit.io](https://share.streamlit.io/) with a GitHub account
-   that has admin access to this repository.
-2. Create an app from `nightyvsc/MyNameIsJev`, branch `main`, entrypoint
-   `dashboard/demo_app.py`.
-3. Select Python 3.11 or a newer supported version if prompted.
-4. Do not add Streamlit secrets, gateway URLs/tokens, TypeSafe keys, or other
-   credentials. Deploy and use the generated `*.streamlit.app` URL.
-5. Open the app settings and verify it is public before sharing the URL.
-
-Community Cloud reads the root `requirements.txt`. The `dashboard/app.py` entrypoint
-below is the private operational console and must not be selected for an anonymous
-public deployment.
-
-## Configuration
-
-- `GATEWAY_BASE_URL`: reachable base URL for VM1, for example `http://<VM1-private-address>:8000`.
-- `GATE_TOKEN`: the same internal token configured in the gateway.
-- `DASHBOARD_APPROVER_ID`: optional default approver label.
-
-Put deployment secrets in a local ignored `.env` or a restricted environment file on VM2.
-Never commit real values.
-
-## Run
+## Build estático
 
 ```bash
-pip install -e '.[dashboard]'
-GATEWAY_BASE_URL='http://<VM1-private-address>:8000' \
-GATE_TOKEN='<local-gate-token>' \
-streamlit run dashboard/app.py --server.address 0.0.0.0 --server.port 3000
+npm run build      # genera dist/
+npm run preview    # sirve dist/ en local
 ```
 
-Replace the quoted address placeholder with VM1's private address before running.
+`dist/` es estático y funciona desde cualquier ruta (base `./`), así que se
+puede servir con nginx, GitHub Pages, Netlify, Vercel o cualquier hosting de
+archivos.
 
-The app polls `GET /decisions` and `GET /approvals?status=pending` every 2 seconds,
-and reads metrics from `GET /metrics` every 10 seconds. All requests send
-`X-Gate-Token`. Approvals use `POST /gate/{action_id}/approve` with
-`{"resolution":"approved|rejected","resolved_by":"..."}`. Gateway/API failures are
-shown in the UI; the dashboard does not substitute mock data.
+## Docker (puerto 3000, Máquina virtual 2)
 
-Streamlit starts on port 3000. Restrict access to the development LAN/VPN; configure a
-TLS reverse proxy before exposing it outside that network.
+```bash
+cd dashboard/web
+docker build -t jev-dashboard-web .
+docker run -p 3000:3000 jev-dashboard-web
+```
+
+## Notas
+
+- Sustituye a la demo anterior de Streamlit (`dashboard/app.py`).
+- La política vive en `src/lib/policy.ts`; los umbrales se copian de la
+  configuración real del repo, no son datos inventados.
+- Nunca muestra direcciones IP reales: la topología usa etiquetas genéricas
+  ("Máquina virtual N").

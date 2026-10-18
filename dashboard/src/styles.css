@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-allow: var(--allow);
+  --color-ask: var(--ask);
+  --color-deny: var(--deny);
+  --color-pending: var(--pending);
+  --color-grid: var(--grid);
+}
+
+:root {
+  --radius: 0.5rem;
+  --background: oklch(0.16 0.012 250);
+  --foreground: oklch(0.95 0.01 240);
+  --card: oklch(0.2 0.014 250);
+  --card-foreground: oklch(0.95 0.01 240);
+  --popover: oklch(0.2 0.014 250);
+  --popover-foreground: oklch(0.95 0.01 240);
+  --primary: oklch(0.86 0.17 128);
+  --primary-foreground: oklch(0.16 0.012 250);
+  --secondary: oklch(0.26 0.014 250);
+  --secondary-foreground: oklch(0.95 0.01 240);
+  --muted: oklch(0.24 0.012 250);
+  --muted-foreground: oklch(0.68 0.02 245);
+  --accent: oklch(0.28 0.02 250);
+  --accent-foreground: oklch(0.95 0.01 240);
+  --destructive: oklch(0.66 0.21 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.3 0.014 250);
+  --input: oklch(0.3 0.014 250);
+  --ring: oklch(0.86 0.17 128);
+  --allow: oklch(0.82 0.17 150);
+  --ask: oklch(0.84 0.16 80);
+  --deny: oklch(0.68 0.21 25);
+  --pending: oklch(0.7 0.03 250);
+  --grid: oklch(0.26 0.012 250);
+  --glow: 0 0 0 1px oklch(0.86 0.17 128 / 0.35), 0 10px 40px -10px oklch(0.86 0.17 128 / 0.35);
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 48px 48px;
+    background-position: -1px -1px;
+  }
+}
+
+@utility panel {
+  background-color: color-mix(in oklch, var(--card) 92%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(6px);
+}
+
+@utility glow {
+  box-shadow: var(--glow);
+}
